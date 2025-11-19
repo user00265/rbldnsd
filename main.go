@@ -6,11 +6,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/user00265/rbldnsd/config"
+	"github.com/user00265/rbldnsd/server"
 	"log"
 	"os"
 	"os/signal"
-	"github.com/user00265/rbldnsd/config"
-	"github.com/user00265/rbldnsd/server"
 	"strings"
 	"syscall"
 )
