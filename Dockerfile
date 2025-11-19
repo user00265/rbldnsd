@@ -1,7 +1,7 @@
 # Build stage
 FROM golang:1.25-alpine AS builder
 
-WORKDIR /src
+WORKDIR /build
 
 # Copy source code and go mod files
 COPY . .
@@ -16,10 +16,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o rbldnsd .
 FROM gcr.io/distroless/base-debian12:nonroot
 
 # Copy binary from builder
-COPY --from=builder /src/rbldnsd /usr/local/bin/rbldnsd
+COPY --from=builder /build/rbldnsd /usr/local/bin/rbldnsd
 
 # Copy entrypoint script
-COPY --from=builder /src/entrypoint.sh /entrypoint.sh
+COPY --from=builder /build/entrypoint.sh /entrypoint.sh
 
 # Create volumes
 VOLUME ["/data", "/config"]
