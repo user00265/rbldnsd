@@ -25,10 +25,10 @@ type Dataset interface {
 
 // GenericEntry represents an A, TXT, MX, or AAAA record.
 type GenericEntry struct {
-	Name   string
-	Type   uint16
-	TTL    uint32
-	Value  string // Store as string, not bytes
+	Name  string
+	Type  uint16
+	TTL   uint32
+	Value string // Store as string, not bytes
 }
 
 // GenericDataset stores generic DNS records

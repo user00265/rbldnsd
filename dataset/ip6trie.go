@@ -245,7 +245,7 @@ func (ds *IP6TrieDataset) insertTrie(ip net.IP, mask net.IPMask, value string, e
 		// Convert nibble to binary string key
 		keyStr := ""
 		for j := 3; j >= 0; j-- {
-			if (nibble >> uint(j)) & 1 == 1 {
+			if (nibble>>uint(j))&1 == 1 {
 				keyStr += "1"
 			} else {
 				keyStr += "0"

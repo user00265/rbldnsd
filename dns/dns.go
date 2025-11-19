@@ -312,10 +312,10 @@ func EncodeSOA(mname, rname string, serial, refresh, retry, expire, minimum uint
 
 	buf := make([]byte, len(mnameEnc)+len(rnameEnc)+20)
 	pos := 0
-	
+
 	copy(buf[pos:], mnameEnc)
 	pos += len(mnameEnc)
-	
+
 	copy(buf[pos:], rnameEnc)
 	pos += len(rnameEnc)
 

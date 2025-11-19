@@ -25,10 +25,10 @@ type ConfigManager struct {
 
 // ZoneChanges describes what zones were added, removed, or updated.
 type ZoneChanges struct {
-	Added    []string // Zone names that were added
-	Removed  []string // Zone names that were removed
-	Updated  []string // Zone names that had config changes
-	ServerChanged bool // Server config (bind, timeout) changed
+	Added         []string // Zone names that were added
+	Removed       []string // Zone names that were removed
+	Updated       []string // Zone names that had config changes
+	ServerChanged bool     // Server config (bind, timeout) changed
 }
 
 // NewConfigManager creates a new config manager.
@@ -160,7 +160,7 @@ func (cm *ConfigManager) detectChanges(oldCfg, newCfg *Config) ZoneChanges {
 	if oldCfg.Server.Bind != newCfg.Server.Bind ||
 		oldCfg.Server.Timeout != newCfg.Server.Timeout {
 		changes.ServerChanged = true
-		log.Printf("server config changed: bind=%s, timeout=%d", 
+		log.Printf("server config changed: bind=%s, timeout=%d",
 			newCfg.Server.Bind, newCfg.Server.Timeout)
 	}
 
