@@ -3,8 +3,22 @@ name: Test
 on:
   push:
     branches: [ master ]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'rbldnsd.yaml'
+      - 'Dockerfile'
+      - 'entrypoint.sh'
   pull_request:
     branches: [ master ]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'rbldnsd.yaml'
+      - 'Dockerfile'
+      - 'entrypoint.sh'
   workflow_dispatch:
 
 jobs:
