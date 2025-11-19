@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"rbldnsd/config"
+	"github.com/user00265/rbldnsd/config"
 )
 
 // TestDNSSimpleZoneLoad tests that a simple valid zone loads

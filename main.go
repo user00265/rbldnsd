@@ -9,8 +9,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"rbldnsd/config"
-	"rbldnsd/server"
+	"github.com/user00265/rbldnsd/config"
+	"github.com/user00265/rbldnsd/server"
 	"strings"
 	"syscall"
 )

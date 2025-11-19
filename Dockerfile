@@ -1,19 +1,16 @@
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /src
 
-# Copy go mod files
-COPY go.mod go.sum ./
+# Copy source code and go mod files
+COPY . .
 
 # Download dependencies
 RUN go mod download
 
-# Copy source code
-COPY . .
-
 # Build the binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o rbldnsd
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o rbldnsd .
 
 # Final stage - distroless
 FROM gcr.io/distroless/base-debian12:nonroot
