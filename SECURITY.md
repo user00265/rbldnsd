@@ -11,7 +11,7 @@
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-If you discover a security vulnerability, please email the maintainers privately. Include:
+If you discover a security vulnerability, please email sam@samresto.dev privately. Include:
 
 1. Description of the vulnerability
 2. Steps to reproduce
@@ -41,6 +41,16 @@ The maintainers will:
 - No DNSSEC support
 - No rate limiting (implement at firewall/load balancer level)
 - No query logging (use external monitoring)
+
+## Supported Go Versions
+
+| Version | Supported |
+|---------|-----------|
+| 1.25    | ✅ Yes |
+| 1.24    | ✅ Yes |
+| < 1.24  | ❌ No |
+
+rbldnsd is built and tested against Go 1.24. Compatibility with newer versions is verified locally before release.
 
 ## Dependencies
 
