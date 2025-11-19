@@ -1,0 +1,47 @@
+# rbldnsd Configuration Example
+
+server:
+  bind: "0.0.0.0:53"
+  timeout: 5
+  auto_reload: true        # Automatically reload zones when files change (default: true)
+  reload_debounce: 2       # Wait 2 seconds before reloading to batch changes (default: 2)
+
+zones:
+  # Zone with inline ACL rules
+  - name: bl.example.local
+    type: ip4trie
+    files:
+      - blocklist.txt
+    acl_rules:
+      allow:
+        - 192.168.0.0/16
+        - 10.0.0.0/8
+        - 127.0.0.1
+        - ::1
+      deny:
+        - 203.0.113.0/24
+
+  # Zone with ACL from file
+  - name: wl.example.local
+    type: generic
+    files:
+      - whitelist.txt
+    acl: /etc/rbldnsd/acl-wl.txt
+
+  # Public zone with no ACL
+  - name: public.example.local
+    type: ip4trie
+    files:
+      - public-list.txt
+
+metrics:
+  prometheus_endpoint: ""
+  otel_endpoint: ""
+
+logging:
+  level: "info"
+
+# To enable metrics, set one or both endpoints:
+# metrics:
+#   prometheus_endpoint: "localhost:9090"
+#   otel_endpoint: "localhost:4318"

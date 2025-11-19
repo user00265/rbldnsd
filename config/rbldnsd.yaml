@@ -1,0 +1,30 @@
+server:
+  bind: "0.0.0.0:53"
+  timeout: 5
+
+zones:
+  - name: bl.example.com
+    type: ip4trie
+    files:
+      - /data/blocklist.txt
+    ns:
+      - ns1.example.com
+      - ns2.example.com
+    soa:
+      mname: ns1.example.com
+      rname: hostmaster.example.com
+      serial: 2024010101
+
+  - name: wl.example.com
+    type: generic
+    files:
+      - /data/whitelist.txt
+    ns:
+      - ns1.example.com
+    soa:
+      mname: ns1.example.com
+      rname: hostmaster.example.com
+      serial: 2024010101
+
+metrics:
+  prometheus_endpoint: "0.0.0.0:9090"

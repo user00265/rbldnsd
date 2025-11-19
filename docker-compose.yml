@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  rbldnsd:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rbldnsd
+    ports:
+      - "53:53/udp"
+    volumes:
+      - ./data:/data:ro
+      - ./config:/config:ro
+    environment:
+      # Optional: Set logging level
+      # LOG_LEVEL: info
+    restart: unless-stopped
+    # Optional: Set resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.5'
+    #       memory: 256M
+    #     reservations:
+    #       cpus: '0.25'
+    #       memory: 128M

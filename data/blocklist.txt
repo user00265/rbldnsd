@@ -1,0 +1,11 @@
+# IPv4 blocklist example
+# Default catch-all
+0.0.0.0/0 127.0.0.2
+
+# Specific blocks
+192.0.2.0/24 127.0.0.3:Spam Network
+203.0.113.0/24 127.0.0.4:ISP Network
+
+# Exclusions
+!192.0.2.50
+!203.0.113.42
