@@ -49,12 +49,30 @@ func (h *multiLevelHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
-const Version = "1.0.0"
-
 var (
+	Version = "1.0.0"
 	GitHash = ""
 	Branch  = ""
 )
+
+// getVersionString returns the formatted version string
+func getVersionString() string {
+	if Version != "" {
+		// Tagged release: v1.2.3+a1b2c3d4
+		versionStr := "v" + Version
+		if GitHash != "" {
+			versionStr += "+" + GitHash
+		}
+		return versionStr
+	} else if Branch == "master" && GitHash != "" {
+		// Master branch build: next (a1b2c3d4)
+		return "next (" + GitHash + ")"
+	} else if GitHash != "" {
+		// Development build: a1b2c3d4
+		return GitHash
+	}
+	return "dev"
+}
 
 func main() {
 	// Configure initial logging with INFO level (will be reconfigured after config load)
@@ -74,28 +92,12 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		var versionStr string
-		if Version != "" {
-			versionStr = fmt.Sprintf("rbldnsd %s", Version)
-			if GitHash != "" {
-				versionStr += fmt.Sprintf("+%s", GitHash)
-			}
-		} else if Branch == "master" {
-			versionStr = "rbldnsd next"
-			if GitHash != "" {
-				versionStr += fmt.Sprintf("+%s", GitHash)
-			}
-		} else if GitHash != "" {
-			versionStr = fmt.Sprintf("rbldnsd %s", GitHash)
-		} else {
-			versionStr = "rbldnsd"
-		}
-		fmt.Println(versionStr)
+		fmt.Println("rbldnsd " + getVersionString())
 		fmt.Println("GitHub: https://github.com/user00265/rbldnsd")
 		os.Exit(0)
 	}
 
-	slog.Info("rbldnsd starting", "version", Version)
+	slog.Info("rbldnsd starting", "version", getVersionString())
 
 	var cfg *config.Config
 	var err error
