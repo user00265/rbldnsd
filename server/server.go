@@ -441,6 +441,59 @@ func (s *Server) handleConfigReload(newCfg *config.Config, changes config.ZoneCh
 		}
 	}
 
+	// Update file watcher to reflect current configuration
+	if s.autoReload && s.watcher != nil {
+		if err := s.updateFileWatcher(newCfg); err != nil {
+			slog.Error("failed to update file watcher", "error", err)
+		}
+	}
+
+	return nil
+}
+
+// updateFileWatcher synchronizes the file watcher with the current configuration
+func (s *Server) updateFileWatcher(cfg *config.Config) error {
+	// Collect all unique files that should be watched
+	shouldWatch := make(map[string]bool)
+	for _, zc := range cfg.Zones {
+		for _, file := range zc.Files {
+			shouldWatch[file] = true
+		}
+		// Also watch ACL files if specified
+		if zc.ACL != "" {
+			shouldWatch[zc.ACL] = true
+		}
+	}
+
+	// Get currently watched files
+	currentlyWatched := s.watcher.WatchList()
+	currentWatchMap := make(map[string]bool)
+	for _, file := range currentlyWatched {
+		currentWatchMap[file] = true
+	}
+
+	// Add new files that should be watched but aren't
+	for file := range shouldWatch {
+		if !currentWatchMap[file] {
+			if err := s.watcher.Add(file); err != nil {
+				slog.Warn("failed to add file to watcher", "file", file, "error", err)
+			} else {
+				slog.Info("now watching file", "file", file)
+			}
+		}
+	}
+
+	// Remove files that are watched but shouldn't be
+	for file := range currentWatchMap {
+		if !shouldWatch[file] {
+			if err := s.watcher.Remove(file); err != nil {
+				slog.Warn("failed to remove file from watcher", "file", file, "error", err)
+			} else {
+				slog.Info("stopped watching file", "file", file)
+			}
+		}
+	}
+
 	return nil
 }
 
