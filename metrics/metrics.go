@@ -8,7 +8,7 @@ package metrics
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -52,10 +52,10 @@ func New(otelEndpoint string, prometheusEndpoint string) (*Metrics, error) {
 			otlpmetrichttp.WithInsecure(),
 		)
 		if err != nil {
-			log.Printf("warning: failed to create OTLP exporter: %v", err)
+			slog.Warn("failed to create OTLP exporter", "error", err)
 		} else {
 			readers = append(readers, sdkmetric.NewPeriodicReader(exporter))
-			log.Printf("OTLP exporter configured for endpoint: %s", otelEndpoint)
+			slog.Info("OTLP exporter configured", "endpoint", otelEndpoint)
 		}
 	}
 
@@ -63,16 +63,16 @@ func New(otelEndpoint string, prometheusEndpoint string) (*Metrics, error) {
 	if prometheusEndpoint != "" {
 		promExporter, err := prometheus.New()
 		if err != nil {
-			log.Printf("warning: failed to create Prometheus exporter: %v", err)
+			slog.Warn("failed to create Prometheus exporter", "error", err)
 		} else {
 			readers = append(readers, promExporter)
-			log.Printf("Prometheus exporter configured for endpoint: %s", prometheusEndpoint)
+			slog.Info("Prometheus exporter configured", "endpoint", prometheusEndpoint)
 		}
 	}
 
 	// Build meter provider with all readers
 	if len(readers) == 0 {
-		log.Println("warning: no metric exporters configured")
+		slog.Warn("no metric exporters configured")
 		return m, nil
 	}
 
@@ -91,7 +91,7 @@ func New(otelEndpoint string, prometheusEndpoint string) (*Metrics, error) {
 		metric.WithDescription("Total DNS queries"),
 	)
 	if err != nil {
-		log.Printf("warning: failed to create query counter: %v", err)
+		slog.Warn("failed to create query counter", "error", err)
 		return m, nil
 	}
 
@@ -100,7 +100,7 @@ func New(otelEndpoint string, prometheusEndpoint string) (*Metrics, error) {
 		metric.WithDescription("Total DNS responses"),
 	)
 	if err != nil {
-		log.Printf("warning: failed to create response counter: %v", err)
+		slog.Warn("failed to create response counter", "error", err)
 		return m, nil
 	}
 
@@ -109,7 +109,7 @@ func New(otelEndpoint string, prometheusEndpoint string) (*Metrics, error) {
 		metric.WithDescription("Total errors"),
 	)
 	if err != nil {
-		log.Printf("warning: failed to create error counter: %v", err)
+		slog.Warn("failed to create error counter", "error", err)
 		return m, nil
 	}
 
@@ -118,7 +118,7 @@ func New(otelEndpoint string, prometheusEndpoint string) (*Metrics, error) {
 		metric.WithDescription("Query latency in milliseconds"),
 	)
 	if err != nil {
-		log.Printf("warning: failed to create latency recorder: %v", err)
+		slog.Warn("failed to create latency recorder", "error", err)
 		return m, nil
 	}
 
@@ -130,7 +130,7 @@ func New(otelEndpoint string, prometheusEndpoint string) (*Metrics, error) {
 	// Start Prometheus HTTP server if configured
 	if m.prometheusAddr != "" {
 		if err := m.startPrometheusServer(); err != nil {
-			log.Printf("warning: failed to start Prometheus server: %v", err)
+			slog.Warn("failed to start Prometheus server", "error", err)
 		}
 	}
 
@@ -205,9 +205,9 @@ func (m *Metrics) startPrometheusServer() error {
 	}
 
 	go func() {
-		log.Printf("Starting Prometheus metrics server on %s/metrics", addr)
+		slog.Info("Starting Prometheus metrics server", "endpoint", addr+"/metrics")
 		if err := m.prometheusServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("Prometheus metrics server error: %v", err)
+			slog.Error("Prometheus metrics server error", "error", err)
 		}
 	}()
 
@@ -236,7 +236,7 @@ func StartPrometheus(port int) error {
 	currentProvider := otel.GetMeterProvider()
 	if _, ok := currentProvider.(*sdkmetric.MeterProvider); ok {
 		// Provider already exists, need to create a new one with both readers
-		log.Println("Warning: MeterProvider already set. Prometheus may not receive all metrics.")
+		slog.Warn("MeterProvider already set. Prometheus may not receive all metrics.")
 	}
 
 	// Create a new meter provider with Prometheus reader
@@ -250,9 +250,9 @@ func StartPrometheus(port int) error {
 	// Start HTTP server in a goroutine
 	addr := fmt.Sprintf("0.0.0.0:%d", port)
 	go func() {
-		log.Printf("Starting Prometheus metrics server on %s/metrics", addr)
+		slog.Info("Starting Prometheus metrics server", "endpoint", addr+"/metrics")
 		if err := http.ListenAndServe(addr, mux); err != nil {
-			log.Printf("Prometheus metrics server error: %v", err)
+			slog.Error("Prometheus metrics server error", "error", err)
 		}
 	}()
 

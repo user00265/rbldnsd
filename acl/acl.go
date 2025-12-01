@@ -7,7 +7,7 @@ package acl
 
 import (
 	"bufio"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"strings"
@@ -64,7 +64,7 @@ func LoadACL(filename string) (*ACL, error) {
 			// Try single IP
 			ip = net.ParseIP(line)
 			if ip == nil {
-				log.Printf("acl line %d: invalid IP/CIDR: %s", lineNum, line)
+				slog.Warn("acl: invalid IP/CIDR", "line", lineNum, "value", line)
 				continue
 			}
 			if ip4 := ip.To4(); ip4 != nil {
@@ -103,7 +103,10 @@ func FromRules(allow, deny []string) (*ACL, error) {
 			// Try single IP
 			ip := net.ParseIP(rule)
 			if ip == nil {
-				log.Printf("allow rule %d: invalid IP/CIDR: %s", i, rule)
+				if err != nil {
+					slog.Warn("allow rule: invalid IP/CIDR", "index", i, "value", rule)
+					continue
+				}
 				continue
 			}
 			if ip4 := ip.To4(); ip4 != nil {
@@ -127,7 +130,10 @@ func FromRules(allow, deny []string) (*ACL, error) {
 			// Try single IP
 			ip := net.ParseIP(rule)
 			if ip == nil {
-				log.Printf("deny rule %d: invalid IP/CIDR: %s", i, rule)
+				if err != nil {
+					slog.Warn("deny rule: invalid IP/CIDR", "index", i, "value", rule)
+					continue
+				}
 				continue
 			}
 			if ip4 := ip.To4(); ip4 != nil {

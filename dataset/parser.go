@@ -5,7 +5,7 @@ package dataset
 
 import (
 	"bufio"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"strconv"
@@ -101,7 +101,7 @@ func parseGenericFile(filename string, ds *GenericDataset) error {
 		case "MX":
 			qtype = 15
 			if idx+1 >= len(fields) {
-				log.Printf("line %d: MX record requires preference and exchange", lineNum)
+				slog.Warn("MX record requires preference and exchange", "line", lineNum)
 				continue
 			}
 			pref := fields[idx]
@@ -186,7 +186,7 @@ func parseIP4SetFile(filename string, ds *IP4SetDataset) error {
 			// Try single IP
 			ip = net.ParseIP(ipStr)
 			if ip == nil {
-				log.Printf("line %d: invalid IP: %s", lineNum, ipStr)
+				slog.Warn("invalid IP", "line", lineNum, "value", ipStr)
 				continue
 			}
 			ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}
@@ -266,7 +266,7 @@ func parseIP4TrieFile(filename string, ds *IP4TrieDataset) error {
 			// Try single IP
 			ip = net.ParseIP(ipStr)
 			if ip == nil {
-				log.Printf("line %d: invalid IP: %s", lineNum, ipStr)
+				slog.Warn("invalid IP", "line", lineNum, "value", ipStr)
 				continue
 			}
 			ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}

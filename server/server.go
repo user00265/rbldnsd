@@ -8,17 +8,18 @@ package server
 import (
 	"context"
 	"fmt"
-	"github.com/user00265/rbldnsd/acl"
-	"github.com/user00265/rbldnsd/config"
-	"github.com/user00265/rbldnsd/dataset"
-	"github.com/user00265/rbldnsd/dns"
-	"github.com/user00265/rbldnsd/metrics"
-	"log"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/user00265/rbldnsd/acl"
+	"github.com/user00265/rbldnsd/config"
+	"github.com/user00265/rbldnsd/dataset"
+	"github.com/user00265/rbldnsd/dns"
+	"github.com/user00265/rbldnsd/metrics"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -73,12 +74,12 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 	if prometheusEndpoint == "" && cfg.Metrics.Port > 0 {
 		// Backward compatibility: convert port to endpoint
 		prometheusEndpoint = fmt.Sprintf("0.0.0.0:%d", cfg.Metrics.Port)
-		log.Printf("Using deprecated 'port' config. Please use 'prometheus_endpoint' instead.")
+		slog.Warn("Using deprecated 'port' config. Please use 'prometheus_endpoint' instead.")
 	}
 
 	srv.metrics, err = metrics.New(cfg.Metrics.OTELEndpoint, prometheusEndpoint)
 	if err != nil {
-		log.Printf("warning: failed to initialize metrics: %v", err)
+		slog.Warn("failed to initialize metrics", "error", err)
 	}
 
 	// Load initial zones
@@ -90,11 +91,11 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 	if configPath != "" {
 		configMgr, err := config.NewConfigManager(configPath, srv.handleConfigReload)
 		if err != nil {
-			log.Printf("warning: failed to initialize config manager: %v", err)
+			slog.Warn("failed to initialize config manager", "error", err)
 		} else {
 			srv.configMgr = configMgr
 			if err := configMgr.Start(); err != nil {
-				log.Printf("warning: failed to start config manager: %v", err)
+				slog.Warn("failed to start config manager", "error", err)
 			}
 		}
 	}
@@ -102,11 +103,11 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 	// Initialize file watcher if auto-reload is enabled (for zone files, not config)
 	if srv.autoReload {
 		if err := srv.initFileWatcher(cfg); err != nil {
-			log.Printf("warning: failed to initialize file watcher: %v", err)
-			log.Printf("automatic reload disabled, use SIGHUP for manual reload")
+			slog.Warn("failed to initialize file watcher", "error", err)
+			slog.Info("automatic reload disabled, use SIGHUP for manual reload")
 			srv.autoReload = false
 		} else {
-			log.Printf("automatic zone file monitoring enabled (debounce: %v)", srv.reloadDebounce)
+			slog.Info("automatic zone file monitoring enabled", "debounce", srv.reloadDebounce)
 		}
 	}
 
@@ -118,11 +119,11 @@ func (s *Server) loadZones(cfg *config.Config) error {
 	var failedZones []string
 
 	for _, zc := range cfg.Zones {
-		log.Printf("loading zone %s (type=%s, files=%v)", zc.Name, zc.Type, zc.Files)
+		slog.Info("loading zone", "zone", zc.Name, "type", zc.Type, "files", zc.Files)
 
 		ds, err := dataset.Load(zc.Type, zc.Files)
 		if err != nil {
-			log.Printf("ERROR: failed to load zone %s: %v", zc.Name, err)
+			slog.Error("failed to load zone", "zone", zc.Name, "error", err)
 			failedZones = append(failedZones, zc.Name)
 			continue
 		}
@@ -133,20 +134,20 @@ func (s *Server) loadZones(cfg *config.Config) error {
 			// Use inline ACL rules from config
 			zoneACL, err = acl.FromRules(zc.ACLRule.Allow, zc.ACLRule.Deny)
 			if err != nil {
-				log.Printf("ERROR: failed to parse inline ACL for zone %s: %v", zc.Name, err)
+				slog.Error("failed to parse inline ACL for zone", "zone", zc.Name, "error", err)
 				failedZones = append(failedZones, zc.Name)
 				continue
 			}
-			log.Printf("  loaded inline ACL: allow=%d, deny=%d", len(zoneACL.Allow), len(zoneACL.Deny))
+			slog.Info("loaded inline ACL", "allow", len(zoneACL.Allow), "deny", len(zoneACL.Deny))
 		} else if zc.ACL != "" {
 			// Load ACL from file
 			zoneACL, err = acl.LoadACL(zc.ACL)
 			if err != nil {
-				log.Printf("ERROR: failed to load ACL file for zone %s: %v", zc.Name, err)
+				slog.Error("failed to load ACL file for zone", "zone", zc.Name, "error", err)
 				failedZones = append(failedZones, zc.Name)
 				continue
 			}
-			log.Printf("  loaded ACL file: %s", zc.ACL)
+			slog.Info("loaded ACL file", "file", zc.ACL)
 		}
 
 		// Set default SOA values if not provided
@@ -194,7 +195,7 @@ func (s *Server) loadZones(cfg *config.Config) error {
 	}
 
 	if len(failedZones) > 0 {
-		log.Printf("warning: failed to load %d zones: %v", len(failedZones), failedZones)
+		slog.Warn("failed to load zones", "count", len(failedZones), "zones", failedZones)
 	}
 
 	return nil
@@ -211,7 +212,7 @@ func (s *Server) handleConfigReload(newCfg *config.Config, changes config.ZoneCh
 	if changes.ServerChanged {
 		// Bind address changes require restart
 		if s.addr != newCfg.Server.Bind {
-			log.Printf("bind address changed from %s to %s (requires restart)", s.addr, newCfg.Server.Bind)
+			slog.Info("bind address changed (requires restart)", "old", s.addr, "new", newCfg.Server.Bind)
 			s.addr = newCfg.Server.Bind
 		}
 		// Other server settings can be applied dynamically if needed
@@ -222,7 +223,7 @@ func (s *Server) handleConfigReload(newCfg *config.Config, changes config.ZoneCh
 		s.zonesMu.Lock()
 		delete(s.zones, zoneName)
 		s.zonesMu.Unlock()
-		log.Printf("zone unloaded: %s", zoneName)
+		slog.Info("zone unloaded", "zone", zoneName)
 	}
 
 	// Handle added and updated zones
@@ -237,17 +238,17 @@ func (s *Server) handleConfigReload(newCfg *config.Config, changes config.ZoneCh
 		}
 
 		if zc == nil {
-			log.Printf("ERROR: zone %s not found in config", zoneName)
+			slog.Error("zone not found in config", "zone", zoneName)
 			continue
 		}
 
 		// Load the zone
-		log.Printf("loading zone %s (type=%s, files=%v)", zc.Name, zc.Type, zc.Files)
+		slog.Info("loading zone", "zone", zc.Name, "type", zc.Type, "files", zc.Files)
 		ds, err := dataset.Load(zc.Type, zc.Files)
 		if err != nil {
 			// On reload, skip this zone and keep existing one
 			// On initial load, this would have failed earlier
-			log.Printf("ERROR: failed to load zone %s: %v (keeping existing zone)", zc.Name, err)
+			slog.Error("failed to load zone (keeping existing zone)", "zone", zc.Name, "error", err)
 			continue
 		}
 
@@ -257,18 +258,18 @@ func (s *Server) handleConfigReload(newCfg *config.Config, changes config.ZoneCh
 			var err error
 			zoneACL, err = acl.FromRules(zc.ACLRule.Allow, zc.ACLRule.Deny)
 			if err != nil {
-				log.Printf("ERROR: failed to parse inline ACL for zone %s: %v (keeping existing zone)", zc.Name, err)
+				slog.Error("failed to parse inline ACL for zone (keeping existing zone)", "zone", zc.Name, "error", err)
 				continue
 			}
-			log.Printf("  loaded inline ACL: allow=%d, deny=%d", len(zoneACL.Allow), len(zoneACL.Deny))
+			slog.Info("loaded inline ACL", "allow", len(zoneACL.Allow), "deny", len(zoneACL.Deny))
 		} else if zc.ACL != "" {
 			var err error
 			zoneACL, err = acl.LoadACL(zc.ACL)
 			if err != nil {
-				log.Printf("ERROR: failed to load ACL file for zone %s: %v (keeping existing zone)", zc.Name, err)
+				slog.Error("failed to load ACL file for zone (keeping existing zone)", "zone", zc.Name, "error", err)
 				continue
 			}
-			log.Printf("  loaded ACL file: %s", zc.ACL)
+			slog.Info("loaded ACL file", "file", zc.ACL)
 		}
 
 		// Set default SOA values
@@ -309,9 +310,9 @@ func (s *Server) handleConfigReload(newCfg *config.Config, changes config.ZoneCh
 		s.zonesMu.Unlock()
 
 		if contains(changes.Added, zoneName) {
-			log.Printf("zone loaded: %s", zoneName)
+			slog.Info("zone loaded", "zone", zoneName)
 		} else {
-			log.Printf("zone reloaded: %s", zoneName)
+			slog.Info("zone reloaded", "zone", zoneName)
 		}
 	}
 
@@ -341,7 +342,7 @@ func (s *Server) ListenAndServe() error {
 	s.listener = conn
 	defer conn.Close()
 
-	log.Printf("listening on %s", s.addr)
+	slog.Info("listening on", "address", s.addr)
 
 	buf := make([]byte, 512)
 	for !s.done.Load() {
@@ -351,7 +352,7 @@ func (s *Server) ListenAndServe() error {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				continue
 			}
-			log.Printf("read error: %v", err)
+			slog.Error("read error", "error", err)
 			continue
 		}
 
@@ -366,7 +367,7 @@ func (s *Server) handleRequest(conn *net.UDPConn, data []byte, remoteAddr *net.U
 
 	msg, err := dns.ParseMessage(data)
 	if err != nil {
-		log.Printf("parse error: %v", err)
+		slog.Error("parse error", "error", err)
 		s.metrics.RecordError("unknown", "parse_error")
 		return
 	}
@@ -395,7 +396,7 @@ func (s *Server) handleRequest(conn *net.UDPConn, data []byte, remoteAddr *net.U
 
 	_, err = conn.WriteToUDP(response, remoteAddr)
 	if err != nil {
-		log.Printf("write error: %v", err)
+		slog.Error("write error", "error", err)
 		s.metrics.RecordError("unknown", "write_error")
 	}
 
@@ -420,7 +421,7 @@ func (s *Server) queryZones(remoteIP net.IP, name string, qtype uint16) []dns.Re
 
 		// Check ACL
 		if zone.acl != nil && !zone.acl.AllowQuery(remoteIP) {
-			log.Printf("query denied by ACL: %s from %s", name, remoteIP)
+			slog.Info("query denied by ACL", "name", name, "ip", remoteIP)
 			s.metrics.RecordError(zoneName, "acl_denied")
 			continue
 		}
@@ -473,7 +474,7 @@ func (s *Server) queryZones(remoteIP net.IP, name string, qtype uint16) []dns.Re
 		// For IP-based datasets, they handle reverse IP lookup themselves
 		result, err := zone.dataset.Query(name, qtype)
 		if err != nil {
-			log.Printf("query error for %s in zone %s: %v", name, zoneName, err)
+			slog.Error("query error", "name", name, "zone", zoneName, "error", err)
 			s.metrics.RecordError(zoneName, "query_error")
 			continue
 		}
@@ -483,7 +484,7 @@ func (s *Server) queryZones(remoteIP net.IP, name string, qtype uint16) []dns.Re
 			continue
 		}
 
-		log.Printf("query %s in zone %s (qtype=%d): got %d values", name, zoneName, qtype, len(result.Values))
+		slog.Info("query result", "name", name, "zone", zoneName, "qtype", qtype, "values", len(result.Values))
 		s.metrics.RecordResponse(zoneName, true)
 
 		var answers []dns.ResourceRecord
@@ -536,7 +537,7 @@ func (s *Server) queryZones(remoteIP net.IP, name string, qtype uint16) []dns.Re
 func (s *Server) Shutdown() {
 	const shutdownTimeout = 5 * time.Second
 
-	log.Println("initiating graceful shutdown (5s timeout)")
+	slog.Info("initiating graceful shutdown (5s timeout)")
 
 	// Signal main loop to stop accepting new connections
 	s.done.Store(true)
@@ -553,7 +554,7 @@ func (s *Server) Shutdown() {
 	// Shutdown metrics server gracefully
 	if s.metrics != nil {
 		if err := s.metrics.Shutdown(ctx); err != nil && err != context.DeadlineExceeded {
-			log.Printf("metrics server shutdown error: %v", err)
+			slog.Error("metrics server shutdown error", "error", err)
 		}
 	}
 
@@ -570,7 +571,7 @@ func (s *Server) Shutdown() {
 
 	// Don't wait for timeout in the shutdown function - let it happen in background
 	// This allows tests to complete and the daemon to exit cleanly
-	log.Println("shutdown initiated, waiting for in-flight requests")
+	slog.Info("shutdown initiated, waiting for in-flight requests")
 }
 
 // initFileWatcher initializes the file system watcher for zone files
@@ -596,9 +597,9 @@ func (s *Server) initFileWatcher(cfg *config.Config) error {
 	// Add files to watcher
 	for file := range filesToWatch {
 		if err := watcher.Add(file); err != nil {
-			log.Printf("warning: failed to watch file %s: %v", file, err)
+			slog.Warn("failed to watch file", "file", file, "error", err)
 		} else {
-			log.Printf("watching file: %s", file)
+			slog.Info("watching file", "file", file)
 		}
 	}
 
@@ -620,7 +621,7 @@ func (s *Server) watchFiles() {
 			// Only handle write, create, remove, and rename events
 			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) ||
 				event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
-				log.Printf("detected file change: %s (op: %v)", event.Name, event.Op)
+				slog.Info("detected file change", "file", event.Name, "op", event.Op)
 				s.scheduleReload()
 			}
 
@@ -628,7 +629,7 @@ func (s *Server) watchFiles() {
 			if !ok {
 				return
 			}
-			log.Printf("file watcher error: %v", err)
+			slog.Error("file watcher error", "error", err)
 		}
 	}
 }
@@ -645,14 +646,14 @@ func (s *Server) scheduleReload() {
 
 	// Schedule new reload after debounce period
 	s.reloadTimer = time.AfterFunc(s.reloadDebounce, func() {
-		log.Printf("reloading zones due to file changes")
+		slog.Info("reloading zones due to file changes")
 		startTime := time.Now()
 
 		if err := s.Reload(); err != nil {
-			log.Printf("failed to reload zones: %v", err)
+			slog.Error("failed to reload zones", "error", err)
 		} else {
 			duration := time.Since(startTime)
-			log.Printf("zones reloaded successfully in %v", duration)
+			slog.Info("zones reloaded successfully", "duration", duration)
 		}
 	})
 }

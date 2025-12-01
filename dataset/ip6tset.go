@@ -5,7 +5,7 @@ package dataset
 
 import (
 	"bufio"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"strings"
@@ -78,7 +78,7 @@ func parseIP6TSetFile(filename string, ds *IP6TSetDataset) error {
 
 		ip := net.ParseIP(parts[0])
 		if ip == nil {
-			log.Printf("warning: invalid IP address at line %d: %s", lineNum, parts[0])
+			slog.Warn("invalid IP address", "line", lineNum, "value", parts[0])
 			continue
 		}
 		ip = ip.To16()

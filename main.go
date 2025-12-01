@@ -4,16 +4,57 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
-	"github.com/user00265/rbldnsd/config"
-	"github.com/user00265/rbldnsd/server"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
+
+	"github.com/user00265/rbldnsd/config"
+	"github.com/user00265/rbldnsd/server"
 )
+
+// levelWriter routes log records to stdout or stderr based on level
+type levelWriter struct{}
+
+func (lw levelWriter) Write(p []byte) (n int, err error) {
+	// This is called by the handler, but we'll use a custom handler instead
+	return os.Stdout.Write(p)
+}
+
+// multiLevelHandler routes ERROR logs to stderr, everything else to stdout
+type multiLevelHandler struct {
+	infoHandler  slog.Handler
+	errorHandler slog.Handler
+}
+
+func (h *multiLevelHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= slog.LevelInfo
+}
+
+func (h *multiLevelHandler) Handle(ctx context.Context, r slog.Record) error {
+	if r.Level >= slog.LevelError {
+		return h.errorHandler.Handle(ctx, r)
+	}
+	return h.infoHandler.Handle(ctx, r)
+}
+
+func (h *multiLevelHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &multiLevelHandler{
+		infoHandler:  h.infoHandler.WithAttrs(attrs),
+		errorHandler: h.errorHandler.WithAttrs(attrs),
+	}
+}
+
+func (h *multiLevelHandler) WithGroup(name string) slog.Handler {
+	return &multiLevelHandler{
+		infoHandler:  h.infoHandler.WithGroup(name),
+		errorHandler: h.errorHandler.WithGroup(name),
+	}
+}
 
 const Version = "1.0.0"
 
@@ -23,6 +64,13 @@ var (
 )
 
 func main() {
+	// Configure structured logging with INFO/WARN to stdout, ERROR to stderr
+	handler := &multiLevelHandler{
+		infoHandler:  slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
+		errorHandler: slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}),
+	}
+	slog.SetDefault(slog.New(handler))
+
 	var (
 		bind       = flag.String("b", "", "bind address and port (host:port)")
 		zones      = flag.String("z", "", "zone specifications (zone:type:file,...)")
@@ -58,7 +106,8 @@ func main() {
 	if *configFile != "" {
 		cfg, err = config.LoadConfig(*configFile)
 		if err != nil {
-			log.Fatalf("failed to load config: %v", err)
+			slog.Error("failed to load config", "error", err)
+			os.Exit(1)
 		}
 	} else {
 		// Build config from CLI flags
@@ -104,7 +153,8 @@ func main() {
 
 	srv, err := server.New(cfg, *configFile)
 	if err != nil {
-		log.Fatalf("failed to create server: %v", err)
+		slog.Error("failed to create server", "error", err)
+		os.Exit(1)
 	}
 
 	// Handle graceful shutdown
@@ -115,9 +165,9 @@ func main() {
 		for sig := range sigChan {
 			switch sig {
 			case syscall.SIGHUP:
-				log.Println("received SIGHUP, reloading zones")
+				slog.Info("received SIGHUP, reloading zones")
 				if err := srv.Reload(); err != nil {
-					log.Printf("failed to reload zones: %v", err)
+					slog.Error("failed to reload zones", "error", err)
 				}
 			case syscall.SIGINT, syscall.SIGTERM:
 				srv.Shutdown()
@@ -126,8 +176,9 @@ func main() {
 		}
 	}()
 
-	log.Printf("rbldnsd %s starting on %s", Version, cfg.Server.Bind)
+	slog.Info("rbldnsd starting", "version", Version, "bind", cfg.Server.Bind)
 	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("server error: %v", err)
+		slog.Error("server error", "error", err)
+		os.Exit(1)
 	}
 }

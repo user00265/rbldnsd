@@ -5,7 +5,7 @@ package dataset
 
 import (
 	"bufio"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"strings"
@@ -206,7 +206,7 @@ func parseIP6TrieFile(filename string, ds *IP6TrieDataset) error {
 			// Try single IP
 			ip = net.ParseIP(ipStr)
 			if ip == nil {
-				log.Printf("line %d: invalid IPv6: %s", lineNum, ipStr)
+				slog.Warn("invalid IPv6", "line", lineNum, "value", ipStr)
 				continue
 			}
 			ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}

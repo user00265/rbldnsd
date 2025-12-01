@@ -6,7 +6,7 @@ package config
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -61,7 +61,7 @@ func (cm *ConfigManager) Start() error {
 		return fmt.Errorf("failed to watch config file: %w", err)
 	}
 
-	log.Printf("watching config file: %s", cm.configPath)
+	slog.Info("watching config file", "path", cm.configPath)
 
 	go cm.watchLoop()
 	return nil
@@ -95,7 +95,7 @@ func (cm *ConfigManager) watchLoop() {
 
 			// Only handle write and create events
 			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
-				log.Printf("config file changed: %s", event.Name)
+				slog.Info("config file changed", "path", event.Name)
 
 				// Cancel pending reload
 				if timer != nil {
@@ -108,11 +108,8 @@ func (cm *ConfigManager) watchLoop() {
 				})
 			}
 
-		case err, ok := <-cm.watcher.Errors:
-			if !ok {
-				return
-			}
-			log.Printf("config watcher error: %v", err)
+		case err := <-cm.watcher.Errors:
+			slog.Error("config watcher error", "error", err)
 
 		case <-cm.done:
 			return
@@ -124,7 +121,7 @@ func (cm *ConfigManager) watchLoop() {
 func (cm *ConfigManager) reloadConfig() {
 	newCfg, err := LoadConfig(cm.configPath)
 	if err != nil {
-		log.Printf("failed to reload config: %v", err)
+		slog.Error("failed to reload config", "error", err)
 		return
 	}
 
@@ -140,7 +137,7 @@ func (cm *ConfigManager) reloadConfig() {
 	if cm.onReload != nil {
 		startTime := time.Now()
 		if err := cm.onReload(newCfg, changes); err != nil {
-			log.Printf("failed to apply config changes: %v", err)
+			slog.Error("failed to apply config changes", "error", err)
 			// Revert to old config
 			cm.mu.Lock()
 			cm.cfg = oldCfg
@@ -148,7 +145,7 @@ func (cm *ConfigManager) reloadConfig() {
 			return
 		}
 		duration := time.Since(startTime)
-		log.Printf("config reloaded successfully in %v", duration)
+		slog.Info("config reloaded successfully", "duration", duration)
 	}
 }
 
@@ -157,11 +154,9 @@ func (cm *ConfigManager) detectChanges(oldCfg, newCfg *Config) ZoneChanges {
 	changes := ZoneChanges{}
 
 	// Check if server config changed
-	if oldCfg.Server.Bind != newCfg.Server.Bind ||
-		oldCfg.Server.Timeout != newCfg.Server.Timeout {
+	if cm.cfg.Server.Bind != newCfg.Server.Bind || cm.cfg.Server.Timeout != newCfg.Server.Timeout {
 		changes.ServerChanged = true
-		log.Printf("server config changed: bind=%s, timeout=%d",
-			newCfg.Server.Bind, newCfg.Server.Timeout)
+		slog.Info("server config changed", "bind", newCfg.Server.Bind, "timeout", newCfg.Server.Timeout)
 	}
 
 	// Build maps of zones by name
@@ -179,7 +174,7 @@ func (cm *ConfigManager) detectChanges(oldCfg, newCfg *Config) ZoneChanges {
 	for name := range newZones {
 		if _, exists := oldZones[name]; !exists {
 			changes.Added = append(changes.Added, name)
-			log.Printf("zone added: %s", name)
+			slog.Info("zone added", "zone", name)
 		}
 	}
 
@@ -187,7 +182,7 @@ func (cm *ConfigManager) detectChanges(oldCfg, newCfg *Config) ZoneChanges {
 	for name := range oldZones {
 		if _, exists := newZones[name]; !exists {
 			changes.Removed = append(changes.Removed, name)
-			log.Printf("zone removed: %s", name)
+			slog.Info("zone removed", "zone", name)
 		}
 	}
 
@@ -196,7 +191,7 @@ func (cm *ConfigManager) detectChanges(oldCfg, newCfg *Config) ZoneChanges {
 		if oldZone, exists := oldZones[name]; exists {
 			if zoneConfigChanged(oldZone, newZone) {
 				changes.Updated = append(changes.Updated, name)
-				log.Printf("zone updated: %s", name)
+				slog.Info("zone updated", "zone", name)
 			}
 		}
 	}
