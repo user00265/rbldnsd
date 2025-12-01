@@ -247,7 +247,12 @@ func (s *Server) ReloadFile(changedFile string) error {
 	for i := range cfg.Zones {
 		zc := &cfg.Zones[i]
 		for _, file := range zc.Files {
-			if file == changedFile {
+			// Strip dataset type prefix if present (e.g., "ip4trie:file.zone" -> "file.zone")
+			cleanFile := file
+			if idx := strings.Index(file, ":"); idx != -1 {
+				cleanFile = file[idx+1:]
+			}
+			if cleanFile == changedFile {
 				affectedZones = append(affectedZones, zc)
 				break
 			}
