@@ -55,8 +55,15 @@ jobs:
       run: |
         GIT_HASH=$(git rev-parse --short HEAD)
         BRANCH=$(git rev-parse --abbrev-ref HEAD)
+        VERSION=""
+        
+        # Extract version from git tag if it exists
+        if git describe --tags --exact-match 2>/dev/null; then
+          VERSION=$(git describe --tags --exact-match | sed 's/^v//')
+        fi
+        
         go build -v \
-          -ldflags="-X main.GitHash=$GIT_HASH -X main.Branch=$BRANCH" \
+          -ldflags="-X main.GitHash=$GIT_HASH -X main.Branch=$BRANCH -X main.Version=$VERSION" \
           ./...
 
     - name: Build Docker image
@@ -84,13 +91,16 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build and push next image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: true
-        tags: ghcr.io/${{ github.repository }}:next
-        labels: |
-          org.opencontainers.image.description=rbldnsd next version image
+      run: |
+        GIT_HASH=$(git rev-parse --short HEAD)
+        docker buildx build \
+          --build-arg VERSION= \
+          --build-arg GIT_HASH=$GIT_HASH \
+          --build-arg BRANCH=master \
+          --push \
+          --tag ghcr.io/${{ github.repository }}:next \
+          --label "org.opencontainers.image.description=rbldnsd next version image" \
+          .
 
   docker:
     needs: build
@@ -132,6 +142,16 @@ jobs:
           type=semver,pattern={{major}}.{{minor}}
           type=raw,value=latest,enable={{is_default_branch}}
 
+    - name: Extract version info
+      id: version
+      run: |
+        VERSION=$(git describe --tags --exact-match | sed 's/^v//')
+        GIT_HASH=$(git rev-parse --short HEAD)
+        BRANCH=$(git rev-parse --abbrev-ref HEAD)
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "git_hash=$GIT_HASH" >> $GITHUB_OUTPUT
+        echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
@@ -139,3 +159,7 @@ jobs:
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          VERSION=${{ steps.version.outputs.version }}
+          GIT_HASH=${{ steps.version.outputs.git_hash }}
+          BRANCH=${{ steps.version.outputs.branch }}

@@ -5,6 +5,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-}
+        GIT_HASH: ${GIT_HASH:-}
+        BRANCH: ${BRANCH:-master}
     container_name: rbldnsd
     ports:
       - "53:53/udp"
@@ -12,8 +16,7 @@ services:
       - ./data:/data:ro
       - ./config:/config:ro
     environment:
-      # Optional: Set logging level
-      # LOG_LEVEL: info
+      LOG_LEVEL: info
     restart: unless-stopped
     # Optional: Set resource limits
     # deploy:

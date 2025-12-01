@@ -82,17 +82,20 @@ func main() {
 
 	if *version {
 		var versionStr string
-		if Branch == "master" {
-			versionStr = "rbldnsd next"
-		} else if Version != "" {
+		if Version != "" {
 			versionStr = fmt.Sprintf("rbldnsd %s", Version)
+			if GitHash != "" {
+				versionStr += fmt.Sprintf("+%s", GitHash)
+			}
+		} else if Branch == "master" {
+			versionStr = "rbldnsd next"
+			if GitHash != "" {
+				versionStr += fmt.Sprintf("+%s", GitHash)
+			}
 		} else if GitHash != "" {
 			versionStr = fmt.Sprintf("rbldnsd %s", GitHash)
 		} else {
 			versionStr = "rbldnsd"
-		}
-		if GitHash != "" && !(Version == "" && Branch != "master") {
-			versionStr += fmt.Sprintf("+%s", GitHash)
 		}
 		fmt.Println(versionStr)
 		fmt.Println("GitHub: https://github.com/user00265/rbldnsd")
