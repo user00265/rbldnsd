@@ -96,31 +96,31 @@ func (ds *IP4TrieDataset) countNodes(node *IP4TrieNode) int {
 	return count + ds.countNodes(node.Children[0]) + ds.countNodes(node.Children[1])
 }
 
-func Load(dataType string, files []string) (Dataset, error) {
+func Load(dataType string, files []string, defaultTTL uint32) (Dataset, error) {
 	switch dataType {
 	case "generic":
-		return loadGeneric(files)
+		return loadGeneric(files, defaultTTL)
 	case "ip4set":
-		return loadIP4Set(files)
+		return loadIP4Set(files, defaultTTL)
 	case "ip4trie":
-		return loadIP4Trie(files)
+		return loadIP4Trie(files, defaultTTL)
 	case "ip4tset":
-		return loadIP4TSet(files)
+		return loadIP4TSet(files, defaultTTL)
 	case "ip6trie":
-		return loadIP6Trie(files)
+		return loadIP6Trie(files, defaultTTL)
 	case "ip6tset":
-		return loadIP6TSet(files)
+		return loadIP6TSet(files, defaultTTL)
 	case "dnset":
-		return loadDNSet(files)
+		return loadDNSet(files, defaultTTL)
 	default:
 		return nil, ErrUnknownDataType
 	}
 }
 
-func loadIP6Trie(files []string) (Dataset, error) {
+func loadIP6Trie(files []string, defaultTTL uint32) (Dataset, error) {
 	ds := &IP6TrieDataset{
 		root:   &IP6TrieNode{Children: make(map[string]*IP6TrieNode)},
-		defTTL: 3600,
+		defTTL: defaultTTL,
 	}
 
 	for _, file := range files {
@@ -132,7 +132,7 @@ func loadIP6Trie(files []string) (Dataset, error) {
 	return ds, nil
 }
 
-func loadGeneric(files []string) (Dataset, error) {
+func loadGeneric(files []string, defaultTTL uint32) (Dataset, error) {
 	ds := &GenericDataset{
 		entries: make(map[string][]*GenericEntry),
 	}
@@ -146,10 +146,10 @@ func loadGeneric(files []string) (Dataset, error) {
 	return ds, nil
 }
 
-func loadIP4Set(files []string) (Dataset, error) {
+func loadIP4Set(files []string, defaultTTL uint32) (Dataset, error) {
 	ds := &IP4SetDataset{
 		entries: make([]*IP4SetEntry, 0),
-		defTTL:  3600,
+		defTTL:  defaultTTL,
 	}
 
 	for _, file := range files {
@@ -161,10 +161,10 @@ func loadIP4Set(files []string) (Dataset, error) {
 	return ds, nil
 }
 
-func loadIP4Trie(files []string) (Dataset, error) {
+func loadIP4Trie(files []string, defaultTTL uint32) (Dataset, error) {
 	ds := &IP4TrieDataset{
 		root:   &IP4TrieNode{},
-		defTTL: 3600,
+		defTTL: defaultTTL,
 	}
 
 	for _, file := range files {

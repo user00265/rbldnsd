@@ -21,10 +21,18 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Bind           string `yaml:"bind"`
-	Timeout        int    `yaml:"timeout"`
-	AutoReload     bool   `yaml:"auto_reload"`     // Enable automatic zone file monitoring
-	ReloadDebounce int    `yaml:"reload_debounce"` // Debounce time in seconds (default: 2)
+	Bind            string `yaml:"bind"`
+	Timeout         int    `yaml:"timeout"`
+	AutoReload      bool   `yaml:"auto_reload"`      // Enable automatic zone file monitoring
+	ReloadDebounce  int    `yaml:"reload_debounce"`  // Debounce time in seconds (default: 2)
+	ReadTimeout     int    `yaml:"read_timeout"`     // UDP read timeout in seconds (default: 1)
+	ShutdownTimeout int    `yaml:"shutdown_timeout"` // Graceful shutdown timeout in seconds (default: 5)
+	UDPBufferSize   int    `yaml:"udp_buffer_size"`  // UDP receive buffer size in bytes (default: 512)
+	DefaultTTL      uint32 `yaml:"default_ttl"`      // Default TTL for records in seconds (default: 3600)
+	SOARefresh      uint32 `yaml:"soa_refresh"`      // Default SOA refresh interval in seconds (default: 3600)
+	SOARetry        uint32 `yaml:"soa_retry"`        // Default SOA retry interval in seconds (default: 600)
+	SOAExpire       uint32 `yaml:"soa_expire"`       // Default SOA expire time in seconds (default: 86400)
+	SOAMinimum      uint32 `yaml:"soa_minimum"`      // Default SOA minimum TTL in seconds (default: 3600)
 }
 
 type ZoneConfig struct {
@@ -72,10 +80,18 @@ func LoadConfig(path string) (*Config, error) {
 
 	cfg := &Config{
 		Server: ServerConfig{
-			Bind:           "0.0.0.0:53",
-			Timeout:        5,
-			AutoReload:     true, // Enable by default
-			ReloadDebounce: 2,    // 2 second debounce
+			Bind:            "0.0.0.0:53",
+			Timeout:         5,
+			AutoReload:      true,  // Enable by default
+			ReloadDebounce:  2,     // 2 second debounce
+			ReadTimeout:     1,     // 1 second read timeout
+			ShutdownTimeout: 5,     // 5 second shutdown timeout
+			UDPBufferSize:   512,   // 512 byte buffer
+			DefaultTTL:      3600,  // 1 hour default TTL
+			SOARefresh:      3600,  // 1 hour SOA refresh
+			SOARetry:        600,   // 10 minute SOA retry
+			SOAExpire:       86400, // 24 hour SOA expire
+			SOAMinimum:      3600,  // 1 hour SOA minimum
 		},
 		Logging: LoggingConfig{
 			Level: "info",

@@ -31,10 +31,10 @@ func (ds *DNSetDataset) Count() int {
 	return len(ds.entries)
 }
 
-func loadDNSet(files []string) (Dataset, error) {
+func loadDNSet(files []string, defaultTTL uint32) (Dataset, error) {
 	ds := &DNSetDataset{
 		entries: make([]*DNSetEntry, 0),
-		defTTL:  3600,
+		defTTL:  defaultTTL,
 	}
 
 	for _, file := range files {

@@ -5,6 +5,22 @@ server:
   timeout: 5
   auto_reload: true        # Automatically reload zones when files change (default: true)
   reload_debounce: 2       # Wait 2 seconds before reloading to batch changes (default: 2)
+  read_timeout: 1          # UDP read timeout in seconds (default: 1)
+  shutdown_timeout: 5      # Graceful shutdown timeout in seconds (default: 5)
+  udp_buffer_size: 512     # UDP receive buffer size in bytes (default: 512)
+  default_ttl: 3600        # Default TTL for DNS records in seconds (default: 3600)
+  soa_refresh: 3600        # Default SOA refresh interval in seconds (default: 3600)
+  soa_retry: 600           # Default SOA retry interval in seconds (default: 600)
+  soa_expire: 86400        # Default SOA expire time in seconds (default: 86400)
+  soa_minimum: 3600        # Default SOA minimum TTL in seconds (default: 3600)
+
+logging:
+  level: "info"
+
+# To enable metrics, set one or both endpoints:
+# metrics:
+#   prometheus_endpoint: "localhost:9090"
+#   otel_endpoint: "localhost:4318"
 
 zones:
   # Zone with inline ACL rules
@@ -34,14 +50,19 @@ zones:
     files:
       - public-list.txt
 
-metrics:
-  prometheus_endpoint: ""
-  otel_endpoint: ""
-
-logging:
-  level: "info"
-
-# To enable metrics, set one or both endpoints:
-# metrics:
-#   prometheus_endpoint: "localhost:9090"
-#   otel_endpoint: "localhost:4318"
+  # Zone with NS and SOA records
+  - name: authoritative.example.local
+    type: ip4trie
+    files:
+      - auth-list.txt
+    ns:
+      - ns1.example.local
+      - ns2.example.local
+    soa:
+      mname: ns1.example.local              # Primary nameserver (defaults to first ns if omitted)
+      rname: hostmaster.example.local       # Email in DNS format (hostmaster@example.local)
+      serial: 2025120101                    # Zone serial number
+      refresh: 3600                         # Refresh interval (uses server default if omitted)
+      retry: 600                            # Retry interval (uses server default if omitted)
+      expire: 86400                         # Expire time (uses server default if omitted)
+      minimum: 3600                         # Minimum TTL (uses server default if omitted)

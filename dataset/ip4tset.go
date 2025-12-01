@@ -29,10 +29,10 @@ func (ds *IP4TSetDataset) Count() int {
 	return len(ds.entries)
 }
 
-func loadIP4TSet(files []string) (Dataset, error) {
+func loadIP4TSet(files []string, defaultTTL uint32) (Dataset, error) {
 	ds := &IP4TSetDataset{
 		entries: make([]*IP4TSetEntry, 0),
-		defTTL:  3600,
+		defTTL:  defaultTTL,
 	}
 
 	for _, file := range files {

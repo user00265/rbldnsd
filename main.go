@@ -24,7 +24,8 @@ type multiLevelHandler struct {
 }
 
 func (h *multiLevelHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return level >= slog.LevelInfo
+	// Check if either handler would accept this level
+	return h.infoHandler.Enabled(ctx, level) || h.errorHandler.Enabled(ctx, level)
 }
 
 func (h *multiLevelHandler) Handle(ctx context.Context, r slog.Record) error {
@@ -161,9 +162,14 @@ func main() {
 		logLevel = slog.LevelError
 	}
 
+	// For error handler: use ERROR level normally, but if debug is enabled, allow debug on stderr too
+	errorLevel := slog.LevelError
+	if logLevel == slog.LevelDebug {
+		errorLevel = slog.LevelDebug
+	}
 	handler = &multiLevelHandler{
 		infoHandler:  slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}),
-		errorHandler: slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}),
+		errorHandler: slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: errorLevel}),
 	}
 	slog.SetDefault(slog.New(handler))
 

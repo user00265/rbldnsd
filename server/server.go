@@ -27,19 +27,27 @@ import (
 // Server represents the DNS server instance.
 // It manages multiple zones and handles incoming UDP queries.
 type Server struct {
-	configPath     string
-	configMgr      *config.ConfigManager
-	zones          map[string]*Zone
-	zonesMu        sync.RWMutex
-	listener       *net.UDPConn
-	addr           string
-	done           atomic.Bool
-	metrics        *metrics.Metrics
-	watcher        *fsnotify.Watcher
-	autoReload     bool
-	reloadDebounce time.Duration
-	reloadTimer    *time.Timer
-	reloadMu       sync.Mutex
+	configPath      string
+	configMgr       *config.ConfigManager
+	zones           map[string]*Zone
+	zonesMu         sync.RWMutex
+	listener        *net.UDPConn
+	addr            string
+	done            atomic.Bool
+	metrics         *metrics.Metrics
+	watcher         *fsnotify.Watcher
+	autoReload      bool
+	reloadDebounce  time.Duration
+	reloadTimer     *time.Timer
+	reloadMu        sync.Mutex
+	readTimeout     time.Duration
+	shutdownTimeout time.Duration
+	udpBufferSize   int
+	defaultTTL      uint32
+	soaRefresh      uint32
+	soaRetry        uint32
+	soaExpire       uint32
+	soaMinimum      uint32
 } // Zone represents a DNS zone with its dataset and configuration.
 type Zone struct {
 	name     string
@@ -54,16 +62,48 @@ type Zone struct {
 // New creates a new DNS server from the provided configuration.
 func New(cfg *config.Config, configPath string) (*Server, error) {
 	srv := &Server{
-		configPath:     configPath,
-		zones:          make(map[string]*Zone),
-		addr:           cfg.Server.Bind,
-		autoReload:     cfg.Server.AutoReload,
-		reloadDebounce: time.Duration(cfg.Server.ReloadDebounce) * time.Second,
+		configPath:      configPath,
+		zones:           make(map[string]*Zone),
+		addr:            cfg.Server.Bind,
+		autoReload:      cfg.Server.AutoReload,
+		reloadDebounce:  time.Duration(cfg.Server.ReloadDebounce) * time.Second,
+		readTimeout:     time.Duration(cfg.Server.ReadTimeout) * time.Second,
+		shutdownTimeout: time.Duration(cfg.Server.ShutdownTimeout) * time.Second,
+		udpBufferSize:   cfg.Server.UDPBufferSize,
+		defaultTTL:      cfg.Server.DefaultTTL,
+		soaRefresh:      cfg.Server.SOARefresh,
+		soaRetry:        cfg.Server.SOARetry,
+		soaExpire:       cfg.Server.SOAExpire,
+		soaMinimum:      cfg.Server.SOAMinimum,
 	}
 
-	// Set default debounce if not specified
+	// Set defaults if not specified
 	if srv.reloadDebounce == 0 {
 		srv.reloadDebounce = 2 * time.Second
+	}
+	if srv.readTimeout == 0 {
+		srv.readTimeout = 1 * time.Second
+	}
+	if srv.shutdownTimeout == 0 {
+		srv.shutdownTimeout = 5 * time.Second
+	}
+	if srv.udpBufferSize == 0 {
+		srv.udpBufferSize = 512
+	}
+	if srv.defaultTTL == 0 {
+		srv.defaultTTL = 3600
+	}
+	if srv.soaRefresh == 0 {
+		srv.soaRefresh = 3600
+	}
+	if srv.soaRetry == 0 {
+		srv.soaRetry = 600
+	}
+	if srv.soaExpire == 0 {
+		srv.soaExpire = 86400
+	}
+	if srv.soaMinimum == 0 {
+		srv.soaMinimum = 3600
 	}
 
 	// Initialize metrics
@@ -112,7 +152,7 @@ func (s *Server) loadZones(cfg *config.Config) error {
 	for _, zc := range cfg.Zones {
 		slog.Info("loading zone", "zone", zc.Name, "type", zc.Type, "files", zc.Files)
 
-		ds, err := dataset.Load(zc.Type, zc.Files)
+		ds, err := dataset.Load(zc.Type, zc.Files, s.defaultTTL)
 		if err != nil {
 			slog.Error("failed to load zone", "zone", zc.Name, "error", err)
 			failedZones = append(failedZones, zc.Name)
@@ -149,16 +189,16 @@ func (s *Server) loadZones(cfg *config.Config) error {
 			soaConfig.MName = zc.NS[0]
 		}
 		if soaConfig.Refresh == 0 {
-			soaConfig.Refresh = 3600
+			soaConfig.Refresh = s.soaRefresh
 		}
 		if soaConfig.Retry == 0 {
-			soaConfig.Retry = 600
+			soaConfig.Retry = s.soaRetry
 		}
 		if soaConfig.Expire == 0 {
-			soaConfig.Expire = 86400
+			soaConfig.Expire = s.soaExpire
 		}
 		if soaConfig.Minimum == 0 {
-			soaConfig.Minimum = 3600
+			soaConfig.Minimum = s.soaMinimum
 		}
 
 		var soaPtr *config.SOAConfig
@@ -236,7 +276,7 @@ func (s *Server) handleConfigReload(newCfg *config.Config, changes config.ZoneCh
 
 		// Load the zone
 		slog.Info("loading zone", "zone", zc.Name, "type", zc.Type, "files", zc.Files)
-		ds, err := dataset.Load(zc.Type, zc.Files)
+		ds, err := dataset.Load(zc.Type, zc.Files, s.defaultTTL)
 		if err != nil {
 			// On reload, skip this zone and keep existing one
 			// On initial load, this would have failed earlier
@@ -270,16 +310,16 @@ func (s *Server) handleConfigReload(newCfg *config.Config, changes config.ZoneCh
 			soaConfig.MName = zc.NS[0]
 		}
 		if soaConfig.Refresh == 0 {
-			soaConfig.Refresh = 3600
+			soaConfig.Refresh = s.soaRefresh
 		}
 		if soaConfig.Retry == 0 {
-			soaConfig.Retry = 600
+			soaConfig.Retry = s.soaRetry
 		}
 		if soaConfig.Expire == 0 {
-			soaConfig.Expire = 86400
+			soaConfig.Expire = s.soaExpire
 		}
 		if soaConfig.Minimum == 0 {
-			soaConfig.Minimum = 3600
+			soaConfig.Minimum = s.soaMinimum
 		}
 
 		var soaPtr *config.SOAConfig
@@ -336,9 +376,9 @@ func (s *Server) ListenAndServe() error {
 
 	slog.Info("listening on", "address", s.addr)
 
-	buf := make([]byte, 512)
+	buf := make([]byte, s.udpBufferSize)
 	for !s.done.Load() {
-		conn.SetReadDeadline(time.Now().Add(time.Second))
+		conn.SetReadDeadline(time.Now().Add(s.readTimeout))
 		n, remoteAddr, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -440,7 +480,7 @@ func (s *Server) queryZones(remoteIP net.IP, name string, qtype uint16) []dns.Re
 								Name:  zoneDot,
 								Type:  dns.QueryTypeNS,
 								Class: dns.ClassIN,
-								TTL:   3600,
+								TTL:   s.defaultTTL,
 								Data:  rrData,
 							})
 						}
@@ -538,9 +578,7 @@ func (s *Server) queryZones(remoteIP net.IP, name string, qtype uint16) []dns.Re
 // Shutdown gracefully shuts down the server with a timeout.
 // It gives in-flight requests up to shutdownTimeout to complete.
 func (s *Server) Shutdown() {
-	const shutdownTimeout = 5 * time.Second
-
-	slog.Info("initiating graceful shutdown (5s timeout)")
+	slog.Info("initiating graceful shutdown", "timeout", s.shutdownTimeout)
 
 	// Signal main loop to stop accepting new connections
 	s.done.Store(true)
@@ -551,7 +589,7 @@ func (s *Server) Shutdown() {
 	}
 
 	// Create context for graceful shutdown with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
 	defer cancel()
 
 	// Shutdown metrics server gracefully
