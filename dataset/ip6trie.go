@@ -171,7 +171,7 @@ func parseReverseIP6(name string) net.IP {
 }
 
 // parseIP6TrieFile parses an ip6trie zone file
-func parseIP6TrieFile(filename string, ds *IP6TrieDataset) error {
+func parseIP6TrieFile(filename string, ds *IP6TrieDataset, silent bool) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -235,14 +235,15 @@ func parseIP6TrieFile(filename string, ds *IP6TrieDataset) error {
 
 		// Parse IP/CIDR
 		var ipnet *net.IPNet
-		var ip net.IP
 
 		_, ipnet, err := net.ParseCIDR(ipStr)
 		if err != nil {
 			// Try single IP
-			ip = net.ParseIP(ipStr)
+			ip := net.ParseIP(ipStr)
 			if ip == nil {
-				slog.Warn("invalid IPv6", "line", lineNum, "value", ipStr)
+				if !silent {
+					slog.Warn("invalid IPv6 address", "line", lineNum, "value", ipStr)
+				}
 				continue
 			}
 			ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}

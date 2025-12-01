@@ -133,6 +133,10 @@ func parseGenericFile(filename string, ds *GenericDataset) error {
 
 // parseIP4SetFile parses an ip4set zone file
 func parseIP4SetFile(filename string, ds *IP4SetDataset) error {
+	return parseIP4SetFileWithSilent(filename, ds, false)
+}
+
+func parseIP4SetFileWithSilent(filename string, ds *IP4SetDataset, silent bool) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -193,7 +197,9 @@ func parseIP4SetFile(filename string, ds *IP4SetDataset) error {
 			// Try single IP
 			ip := net.ParseIP(ipStr)
 			if ip == nil {
-				slog.Warn("invalid IP", "line", lineNum, "value", ipStr)
+				if !silent {
+					slog.Warn("invalid IP", "line", lineNum, "value", ipStr)
+				}
 				continue
 			}
 			ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}
@@ -222,6 +228,10 @@ func parseIP4SetFile(filename string, ds *IP4SetDataset) error {
 
 // parseIP4TrieFile parses an ip4trie zone file
 func parseIP4TrieFile(filename string, ds *IP4TrieDataset) error {
+	return parseIP4TrieFileWithSilent(filename, ds, false)
+}
+
+func parseIP4TrieFileWithSilent(filename string, ds *IP4TrieDataset, silent bool) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -292,7 +302,9 @@ func parseIP4TrieFile(filename string, ds *IP4TrieDataset) error {
 			// Try single IP
 			ip = net.ParseIP(ipStr)
 			if ip == nil {
-				slog.Warn("invalid IP", "line", lineNum, "value", ipStr)
+				if !silent {
+					slog.Warn("invalid IP", "line", lineNum, "value", ipStr)
+				}
 				continue
 			}
 			ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}

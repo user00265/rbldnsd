@@ -31,14 +31,14 @@ func (ds *IP4TSetDataset) Count() int {
 	return len(ds.entries)
 }
 
-func loadIP4TSet(files []string, defaultTTL uint32) (Dataset, error) {
+func loadIP4TSet(files []string, defaultTTL uint32, silent bool) (Dataset, error) {
 	ds := &IP4TSetDataset{
 		entries: make([]*IP4TSetEntry, 0),
 		defTTL:  defaultTTL,
 	}
 
 	for _, file := range files {
-		if err := parseIP4TSetFile(file, ds); err != nil {
+		if err := parseIP4TSetFile(file, ds, silent); err != nil {
 			return nil, err
 		}
 	}
@@ -46,7 +46,7 @@ func loadIP4TSet(files []string, defaultTTL uint32) (Dataset, error) {
 	return ds, nil
 }
 
-func parseIP4TSetFile(filename string, ds *IP4TSetDataset) error {
+func parseIP4TSetFile(filename string, ds *IP4TSetDataset, silent bool) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -89,7 +89,9 @@ func parseIP4TSetFile(filename string, ds *IP4TSetDataset) error {
 
 		ip := net.ParseIP(parts[0])
 		if ip == nil {
-			slog.Warn("invalid IP address", "line", lineNum, "value", parts[0])
+			if !silent {
+				slog.Warn("invalid IP address", "line", lineNum, "value", parts[0])
+			}
 			continue
 		}
 		ip = ip.To4()

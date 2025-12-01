@@ -131,20 +131,20 @@ func (ds *CombinedDataset) Query(name string, qtype uint16) (*QueryResult, error
 	return nil, nil
 }
 
-func Load(dataType string, files []string, defaultTTL uint32) (Dataset, error) {
+func Load(dataType string, files []string, defaultTTL uint32, silent bool) (Dataset, error) {
 	switch dataType {
 	case "generic":
 		return loadGeneric(files, defaultTTL)
 	case "ip4set":
-		return loadIP4Set(files, defaultTTL)
+		return loadIP4Set(files, defaultTTL, silent)
 	case "ip4trie":
-		return loadIP4Trie(files, defaultTTL)
+		return loadIP4Trie(files, defaultTTL, silent)
 	case "ip4tset":
-		return loadIP4TSet(files, defaultTTL)
+		return loadIP4TSet(files, defaultTTL, silent)
 	case "ip6trie":
-		return loadIP6Trie(files, defaultTTL)
+		return loadIP6Trie(files, defaultTTL, silent)
 	case "ip6tset":
-		return loadIP6TSet(files, defaultTTL)
+		return loadIP6TSet(files, defaultTTL, silent)
 	case "dnset":
 		return loadDNSet(files, defaultTTL)
 	case "combined":
@@ -154,14 +154,14 @@ func Load(dataType string, files []string, defaultTTL uint32) (Dataset, error) {
 	}
 }
 
-func loadIP6Trie(files []string, defaultTTL uint32) (Dataset, error) {
+func loadIP6Trie(files []string, defaultTTL uint32, silent bool) (Dataset, error) {
 	ds := &IP6TrieDataset{
 		root:   &IP6TrieNode{Children: make(map[string]*IP6TrieNode)},
 		defTTL: defaultTTL,
 	}
 
 	for _, file := range files {
-		if err := parseIP6TrieFile(file, ds); err != nil {
+		if err := parseIP6TrieFile(file, ds, silent); err != nil {
 			return nil, err
 		}
 	}
@@ -183,14 +183,14 @@ func loadGeneric(files []string, defaultTTL uint32) (Dataset, error) {
 	return ds, nil
 }
 
-func loadIP4Set(files []string, defaultTTL uint32) (Dataset, error) {
+func loadIP4Set(files []string, defaultTTL uint32, silent bool) (Dataset, error) {
 	ds := &IP4SetDataset{
 		entries: make([]*IP4SetEntry, 0),
 		defTTL:  defaultTTL,
 	}
 
 	for _, file := range files {
-		if err := parseIP4SetFile(file, ds); err != nil {
+		if err := parseIP4SetFileWithSilent(file, ds, silent); err != nil {
 			return nil, err
 		}
 	}
@@ -198,14 +198,14 @@ func loadIP4Set(files []string, defaultTTL uint32) (Dataset, error) {
 	return ds, nil
 }
 
-func loadIP4Trie(files []string, defaultTTL uint32) (Dataset, error) {
+func loadIP4Trie(files []string, defaultTTL uint32, silent bool) (Dataset, error) {
 	ds := &IP4TrieDataset{
 		root:   &IP4TrieNode{},
 		defTTL: defaultTTL,
 	}
 
 	for _, file := range files {
-		if err := parseIP4TrieFile(file, ds); err != nil {
+		if err := parseIP4TrieFileWithSilent(file, ds, silent); err != nil {
 			return nil, err
 		}
 	}
@@ -239,8 +239,8 @@ func loadCombined(files []string, defaultTTL uint32) (Dataset, error) {
 			dsType = detectedType
 		}
 
-		// Load the individual dataset
-		ds, err := Load(dsType, []string{filename}, defaultTTL)
+		// Load the individual dataset with silent=true to suppress warnings
+		ds, err := Load(dsType, []string{filename}, defaultTTL, true)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load %s as %s: %w", filename, dsType, err)
 		}

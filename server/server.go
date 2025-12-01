@@ -152,7 +152,7 @@ func (s *Server) loadZones(cfg *config.Config) error {
 	for _, zc := range cfg.Zones {
 		slog.Info("loading zone", "zone", zc.Name, "type", zc.Type, "files", zc.Files)
 
-		ds, err := dataset.Load(zc.Type, zc.Files, s.defaultTTL)
+		ds, err := dataset.Load(zc.Type, zc.Files, s.defaultTTL, false)
 		if err != nil {
 			slog.Error("failed to load zone", "zone", zc.Name, "error", err)
 			failedZones = append(failedZones, zc.Name)
@@ -267,7 +267,7 @@ func (s *Server) ReloadFile(changedFile string) error {
 	for _, zc := range affectedZones {
 		slog.Info("reloading zone", "zone", zc.Name, "type", zc.Type, "files", zc.Files)
 
-		ds, err := dataset.Load(zc.Type, zc.Files, s.defaultTTL)
+		ds, err := dataset.Load(zc.Type, zc.Files, s.defaultTTL, false)
 		if err != nil {
 			slog.Error("failed to reload zone", "zone", zc.Name, "error", err)
 			continue
@@ -369,7 +369,7 @@ func (s *Server) handleConfigReload(newCfg *config.Config, changes config.ZoneCh
 
 		// Load the zone
 		slog.Info("loading zone", "zone", zc.Name, "type", zc.Type, "files", zc.Files)
-		ds, err := dataset.Load(zc.Type, zc.Files, s.defaultTTL)
+		ds, err := dataset.Load(zc.Type, zc.Files, s.defaultTTL, false)
 		if err != nil {
 			// On reload, skip this zone and keep existing one
 			// On initial load, this would have failed earlier

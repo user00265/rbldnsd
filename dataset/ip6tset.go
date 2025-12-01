@@ -31,14 +31,14 @@ func (ds *IP6TSetDataset) Count() int {
 	return len(ds.entries)
 }
 
-func loadIP6TSet(files []string, defaultTTL uint32) (Dataset, error) {
+func loadIP6TSet(files []string, defaultTTL uint32, silent bool) (Dataset, error) {
 	ds := &IP6TSetDataset{
 		entries: make([]*IP6TSetEntry, 0),
 		defTTL:  defaultTTL,
 	}
 
 	for _, file := range files {
-		if err := parseIP6TSetFile(file, ds); err != nil {
+		if err := parseIP6TSetFile(file, ds, silent); err != nil {
 			return nil, err
 		}
 	}
@@ -46,7 +46,7 @@ func loadIP6TSet(files []string, defaultTTL uint32) (Dataset, error) {
 	return ds, nil
 }
 
-func parseIP6TSetFile(filename string, ds *IP6TSetDataset) error {
+func parseIP6TSetFile(filename string, ds *IP6TSetDataset, silent bool) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -89,7 +89,9 @@ func parseIP6TSetFile(filename string, ds *IP6TSetDataset) error {
 
 		ip := net.ParseIP(parts[0])
 		if ip == nil {
-			slog.Warn("invalid IP address", "line", lineNum, "value", parts[0])
+			if !silent {
+				slog.Warn("invalid IP address", "line", lineNum, "value", parts[0])
+			}
 			continue
 		}
 		ip = ip.To16()
