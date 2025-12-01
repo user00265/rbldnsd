@@ -7,15 +7,19 @@
 package dataset
 
 import (
+	"bufio"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 )
 
 // QueryResult represents the result of a dataset query.
+// Matches Spamhaus rbldnsd behavior: stores both A and TXT records.
 type QueryResult struct {
-	TTL    uint32
-	Values []string // Can be IP addresses or text
+	TTL         uint32
+	ARecord     string // A record value (e.g., "127.0.0.2")
+	TXTTemplate string // TXT template with $ for substitution
 }
 
 // Dataset is the interface that all dataset types must implement.
@@ -56,9 +60,11 @@ type IP4SetEntry struct {
 
 // IP4SetDataset stores IPv4 entries sorted for efficient lookup
 type IP4SetDataset struct {
-	entries []*IP4SetEntry
-	def     string
-	defTTL  uint32
+	entries   []*IP4SetEntry
+	def       string
+	defTTL    uint32
+	maxRange  int   // Maximum CIDR prefix length (for $MAXRANGE4)
+	timestamp int64 // Zone file modification time (for $TIMESTAMP)
 }
 
 func (ds *IP4SetDataset) Count() int {
@@ -76,9 +82,11 @@ type IP4TrieNode struct {
 
 // IP4TrieDataset uses a trie for efficient IP matching
 type IP4TrieDataset struct {
-	root   *IP4TrieNode
-	defVal string
-	defTTL uint32
+	root      *IP4TrieNode
+	defVal    string
+	defTTL    uint32
+	maxRange  int   // Maximum CIDR prefix length (for $MAXRANGE4)
+	timestamp int64 // Zone file modification time (for $TIMESTAMP)
 }
 
 func (ds *IP4TrieDataset) Count() int {
@@ -94,6 +102,33 @@ func (ds *IP4TrieDataset) countNodes(node *IP4TrieNode) int {
 		count = 1
 	}
 	return count + ds.countNodes(node.Children[0]) + ds.countNodes(node.Children[1])
+}
+
+// CombinedDataset holds multiple datasets and queries them in order
+type CombinedDataset struct {
+	datasets []Dataset
+}
+
+func (ds *CombinedDataset) Count() int {
+	count := 0
+	for _, d := range ds.datasets {
+		count += d.Count()
+	}
+	return count
+}
+
+func (ds *CombinedDataset) Query(name string, qtype uint16) (*QueryResult, error) {
+	// Query each dataset in order until one returns a result
+	for _, d := range ds.datasets {
+		result, err := d.Query(name, qtype)
+		if err != nil {
+			return nil, err
+		}
+		if result != nil {
+			return result, nil
+		}
+	}
+	return nil, nil
 }
 
 func Load(dataType string, files []string, defaultTTL uint32) (Dataset, error) {
@@ -112,6 +147,8 @@ func Load(dataType string, files []string, defaultTTL uint32) (Dataset, error) {
 		return loadIP6TSet(files, defaultTTL)
 	case "dnset":
 		return loadDNSet(files, defaultTTL)
+	case "combined":
+		return loadCombined(files, defaultTTL)
 	default:
 		return nil, ErrUnknownDataType
 	}
@@ -176,30 +213,141 @@ func loadIP4Trie(files []string, defaultTTL uint32) (Dataset, error) {
 	return ds, nil
 }
 
+func loadCombined(files []string, defaultTTL uint32) (Dataset, error) {
+	combined := &CombinedDataset{
+		datasets: make([]Dataset, 0),
+	}
+
+	// For combined datasets, each file spec can be "type:filename"
+	// If no type prefix, attempt auto-detection
+	for _, fileSpec := range files {
+		parts := strings.SplitN(fileSpec, ":", 2)
+		var dsType string
+		var filename string
+
+		if len(parts) == 2 {
+			// Explicit type specified
+			dsType = parts[0]
+			filename = parts[1]
+		} else {
+			// Auto-detect based on file content
+			filename = fileSpec
+			detectedType, err := detectDatasetType(filename)
+			if err != nil {
+				return nil, fmt.Errorf("failed to detect dataset type for %s: %w", filename, err)
+			}
+			dsType = detectedType
+		}
+
+		// Load the individual dataset
+		ds, err := Load(dsType, []string{filename}, defaultTTL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load %s as %s: %w", filename, dsType, err)
+		}
+
+		combined.datasets = append(combined.datasets, ds)
+	}
+
+	return combined, nil
+}
+
+// detectDatasetType attempts to auto-detect the dataset type from file content
+func detectDatasetType(filename string) (string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip comments and blank lines
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Skip directives
+		if strings.HasPrefix(line, "$") || strings.HasPrefix(line, ":") || strings.HasPrefix(line, "!") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+
+		// Check first field to determine type
+		firstField := fields[0]
+
+		// Check if it's an IPv6 address (contains colons, not a port)
+		if strings.Contains(firstField, ":") && strings.Count(firstField, ":") > 1 {
+			return "ip6trie", nil
+		}
+
+		// Check if it's an IPv4 address or CIDR
+		if ip := net.ParseIP(firstField); ip != nil {
+			return "ip4trie", nil
+		}
+		if _, _, err := net.ParseCIDR(firstField); err == nil {
+			return "ip4trie", nil
+		}
+
+		// Check for DNS record format (has record type like A, TXT, MX)
+		if len(fields) >= 3 {
+			for i := 1; i < len(fields); i++ {
+				recordType := strings.ToUpper(fields[i])
+				if recordType == "A" || recordType == "TXT" || recordType == "MX" || recordType == "AAAA" {
+					return "generic", nil
+				}
+			}
+		}
+
+		// Assume domain name = dnset
+		return "dnset", nil
+	}
+
+	// Default to generic if can't determine
+	return "generic", scanner.Err()
+}
+
 // GenericDataset.Query looks up a record in the generic dataset
 func (ds *GenericDataset) Query(name string, qtype uint16) (*QueryResult, error) {
-	entries, exists := ds.entries[strings.ToLower(name)]
-	if !exists {
+	name = strings.ToLower(name)
+	if !strings.HasSuffix(name, ".") {
+		name += "."
+	}
+
+	entries, ok := ds.entries[name]
+	if !ok || len(entries) == 0 {
 		return nil, nil
 	}
 
-	var values []string
+	// Generic dataset returns actual record values, not A|TXT format
+	// For A records, return IP; for TXT, return text
+	var aRecord string
+	var txtTemplate string
 	var ttl uint32
 
 	for _, entry := range entries {
-		if entry.Type == qtype {
-			if ttl == 0 {
+		if entry.Type == qtype || qtype == 255 { // 255 = ANY
+			if entry.Type == 1 { // A record
+				aRecord = entry.Value
+			} else if entry.Type == 16 { // TXT record
+				txtTemplate = entry.Value
+			}
+			if ttl == 0 || entry.TTL < ttl {
 				ttl = entry.TTL
 			}
-			values = append(values, entry.Value)
 		}
 	}
 
-	if len(values) == 0 {
+	if aRecord == "" && txtTemplate == "" {
 		return nil, nil
 	}
 
-	return &QueryResult{TTL: ttl, Values: values}, nil
+	return &QueryResult{TTL: ttl, ARecord: aRecord, TXTTemplate: txtTemplate}, nil
 }
 
 // IP4SetDataset.Query looks up an IP in the IP4 set
@@ -215,18 +363,32 @@ func (ds *IP4SetDataset) Query(name string, qtype uint16) (*QueryResult, error) 
 			if entry.Excluded {
 				continue
 			}
-			if entry.Value == "" {
-				entry.Value = ds.def
+			value := entry.Value
+			if value == "" {
+				value = ds.def
 			}
-			if entry.Value == "" {
-				return nil, nil
+			if value == "" {
+				value = "127.0.0.2|"
 			}
-			return &QueryResult{TTL: entry.TTL, Values: []string{entry.Value}}, nil
+			// Split A|TXT format
+			parts := strings.SplitN(value, "|", 2)
+			aRecord := parts[0]
+			txtTemplate := ""
+			if len(parts) > 1 {
+				txtTemplate = parts[1]
+			}
+			return &QueryResult{TTL: entry.TTL, ARecord: aRecord, TXTTemplate: txtTemplate}, nil
 		}
 	}
 
 	if ds.def != "" {
-		return &QueryResult{TTL: ds.defTTL, Values: []string{ds.def}}, nil
+		parts := strings.SplitN(ds.def, "|", 2)
+		aRecord := parts[0]
+		txtTemplate := ""
+		if len(parts) > 1 {
+			txtTemplate = parts[1]
+		}
+		return &QueryResult{TTL: ds.defTTL, ARecord: aRecord, TXTTemplate: txtTemplate}, nil
 	}
 
 	return nil, nil
@@ -249,15 +411,25 @@ func (ds *IP4TrieDataset) Query(name string, qtype uint16) (*QueryResult, error)
 		value = ds.defVal
 	}
 	if value == "" {
-		return nil, nil
+		value = "127.0.0.2|"
 	}
+
+	// Split A|TXT format
+	parts := strings.SplitN(value, "|", 2)
+	aRecord := parts[0]
+	txtTemplate := ""
+	if len(parts) > 1 {
+		txtTemplate = parts[1]
+	}
+	// Substitute variables in TXT template
+	txtTemplate = substituteTXTWithMetadata(txtTemplate, ip.String(), ds.timestamp, ds.maxRange, false)
 
 	ttl := node.TTL
 	if ttl == 0 {
 		ttl = ds.defTTL
 	}
 
-	return &QueryResult{TTL: ttl, Values: []string{value}}, nil
+	return &QueryResult{TTL: ttl, ARecord: aRecord, TXTTemplate: txtTemplate}, nil
 }
 
 // findNode traverses the trie for an IP address
@@ -318,4 +490,50 @@ func parseReverseIP(name string) net.IP {
 	}
 
 	return ip
+}
+
+// parseReverseIPv6 converts a reverse DNS IPv6 name to an IP address
+// Format: x.x.x.x....x.x.ip6.arpa (32 nibbles reversed)
+func parseReverseIPv6(name string) net.IP {
+	// Remove trailing dot
+	name = strings.TrimSuffix(name, ".")
+
+	// Remove .ip6.arpa suffix if present
+	name = strings.TrimSuffix(name, ".ip6.arpa")
+
+	parts := strings.Split(name, ".")
+	if len(parts) != 32 {
+		return nil
+	}
+
+	// Each part is a hex nibble, reversed
+	ip := make(net.IP, 16)
+	for i := 0; i < 32; i++ {
+		var val int
+		if _, err := fmt.Sscanf(parts[i], "%x", &val); err != nil {
+			return nil
+		}
+		if val < 0 || val > 15 {
+			return nil
+		}
+		// Reverse order: parts[0] is the last nibble
+		byteIdx := 15 - (i / 2)
+		if i%2 == 0 {
+			ip[byteIdx] |= byte(val)
+		} else {
+			ip[byteIdx] |= byte(val << 4)
+		}
+	}
+
+	return ip
+}
+
+// ipv6Equal compares two IPv6 addresses for equality
+func ipv6Equal(a, b net.IP) bool {
+	a16 := a.To16()
+	b16 := b.To16()
+	if a16 == nil || b16 == nil {
+		return false
+	}
+	return a16.Equal(b16)
 }

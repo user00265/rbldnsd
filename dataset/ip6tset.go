@@ -20,9 +20,11 @@ type IP6TSetEntry struct {
 
 // IP6TSetDataset stores IPv6 addresses with individual values
 type IP6TSetDataset struct {
-	entries []*IP6TSetEntry
-	defVal  string
-	defTTL  uint32
+	entries   []*IP6TSetEntry
+	defVal    string
+	defTTL    uint32
+	maxRange  int   // Maximum CIDR prefix length (for $MAXRANGE6)
+	timestamp int64 // Zone file modification time (for $TIMESTAMP)
 }
 
 func (ds *IP6TSetDataset) Count() int {
@@ -51,6 +53,11 @@ func parseIP6TSetFile(filename string, ds *IP6TSetDataset) error {
 	}
 	defer file.Close()
 
+	// Get file modification time for $TIMESTAMP
+	if fileInfo, err := os.Stat(filename); err == nil {
+		ds.timestamp = fileInfo.ModTime().Unix()
+	}
+
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
 
@@ -62,11 +69,11 @@ func parseIP6TSetFile(filename string, ds *IP6TSetDataset) error {
 			continue
 		}
 
-		// Handle default value line (:value)
+		// Handle default value line (:A:TXT format)
 		if strings.HasPrefix(line, ":") {
-			val, ttl := parseValue(line[1:])
-			if val != "" {
-				ds.defVal = val
+			aRecord, txtTemplate, ttl := parseATxt(line)
+			if aRecord != "" {
+				ds.defVal = aRecord + "|" + txtTemplate
 			}
 			if ttl > 0 {
 				ds.defTTL = ttl
@@ -94,10 +101,8 @@ func parseIP6TSetFile(filename string, ds *IP6TSetDataset) error {
 		value := ds.defVal
 		ttl := ds.defTTL
 		if len(parts) > 1 {
-			val, t := parseValue(strings.Join(parts[1:], " "))
-			if val != "" {
-				value = val
-			}
+			aRecord, txtTemplate, t := parseATxt(strings.Join(parts[1:], " "))
+			value = aRecord + "|" + txtTemplate
 			if t > 0 {
 				ttl = t
 			}
@@ -116,17 +121,27 @@ func parseIP6TSetFile(filename string, ds *IP6TSetDataset) error {
 
 // Query looks up an IPv6 address in the IP6TSet
 func (ds *IP6TSetDataset) Query(name string, qtype uint16) (*QueryResult, error) {
-	ip := parseReverseIP6(name)
+	ip := parseReverseIPv6(name)
 	if ip == nil {
 		return nil, nil
 	}
 
 	// Linear search for exact match
 	for _, entry := range ds.entries {
-		if entry.IP.Equal(ip) {
+		if ipv6Equal(entry.IP, ip) {
+			// Split A|TXT format
+			parts := strings.SplitN(entry.Value, "|", 2)
+			aRecord := parts[0]
+			txtTemplate := ""
+			if len(parts) > 1 {
+				txtTemplate = parts[1]
+			}
+			// Substitute variables in TXT template
+			txtTemplate = substituteTXTWithMetadata(txtTemplate, ip.String(), ds.timestamp, ds.maxRange, true)
 			return &QueryResult{
-				TTL:    entry.TTL,
-				Values: []string{entry.Value},
+				TTL:         entry.TTL,
+				ARecord:     aRecord,
+				TXTTemplate: txtTemplate,
 			}, nil
 		}
 	}

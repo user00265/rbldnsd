@@ -73,14 +73,11 @@ func parseDNSetFile(filename string, ds *DNSetDataset) error {
 			continue
 		}
 
-		// Handle default value line (:value)
+		// Handle default value line (:A:TXT format)
 		if strings.HasPrefix(line, ":") {
-			val, ttl := parseValue(line[1:])
-			if val != "" {
-				ds.defVal = val
-			}
-			if ttl > 0 {
-				ds.defTTL = ttl
+			aRecord, txtTemplate, _ := parseATxt(line)
+			if aRecord != "" {
+				ds.defVal = aRecord + "|" + txtTemplate
 			}
 			continue
 		}
@@ -111,10 +108,9 @@ func parseDNSetFile(filename string, ds *DNSetDataset) error {
 		value := ds.defVal
 		ttl := ds.defTTL
 		if len(parts) > 1 && !negated {
-			val, t := parseValue(strings.Join(parts[1:], " "))
-			if val != "" {
-				value = val
-			}
+			// Parse A:TXT format for this entry
+			aRecord, txtTemplate, t := parseATxt(strings.Join(parts[1:], " "))
+			value = aRecord + "|" + txtTemplate
 			if t > 0 {
 				ttl = t
 			}
@@ -149,9 +145,20 @@ func (ds *DNSetDataset) Query(name string, qtype uint16) (*QueryResult, error) {
 			if entry.Negated {
 				return nil, nil
 			}
+			// Split A|TXT format
+			parts := strings.SplitN(entry.Value, "|", 2)
+			aRecord := parts[0]
+			txtTemplate := ""
+			if len(parts) > 1 {
+				txtTemplate = parts[1]
+			}
+			// Substitute $ with domain name (without trailing dot)
+			domainForSubst := strings.TrimSuffix(name, ".")
+			txtTemplate = substituteTXT(txtTemplate, domainForSubst)
 			return &QueryResult{
-				TTL:    entry.TTL,
-				Values: []string{entry.Value},
+				TTL:         entry.TTL,
+				ARecord:     aRecord,
+				TXTTemplate: txtTemplate,
 			}, nil
 		}
 	}
@@ -165,9 +172,20 @@ func (ds *DNSetDataset) Query(name string, qtype uint16) (*QueryResult, error) {
 			if entry.Negated {
 				return nil, nil
 			}
+			// Split A|TXT format
+			parts := strings.SplitN(entry.Value, "|", 2)
+			aRecord := parts[0]
+			txtTemplate := ""
+			if len(parts) > 1 {
+				txtTemplate = parts[1]
+			}
+			// Substitute $ with domain name (without trailing dot)
+			domainForSubst := strings.TrimSuffix(name, ".")
+			txtTemplate = substituteTXT(txtTemplate, domainForSubst)
 			return &QueryResult{
-				TTL:    entry.TTL,
-				Values: []string{entry.Value},
+				TTL:         entry.TTL,
+				ARecord:     aRecord,
+				TXTTemplate: txtTemplate,
 			}, nil
 		}
 	}

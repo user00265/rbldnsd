@@ -445,7 +445,12 @@ func (s *Server) queryZones(remoteIP net.IP, name string, qtype uint16) []dns.Re
 	s.zonesMu.RLock()
 	defer s.zonesMu.RUnlock()
 
-	slog.Debug("queryZones", "name", name, "qtype", qtype, "zones", len(s.zones))
+	// Find the matching zone first (most specific match)
+	// This matches Spamhaus rbldnsd's findqzone() behavior
+	var matchedZone *Zone
+	var matchedZoneName string
+	var matchedZoneDot string
+	longestMatch := 0
 
 	for zoneName, zone := range s.zones {
 		zoneDot := zoneName
@@ -454,125 +459,194 @@ func (s *Server) queryZones(remoteIP net.IP, name string, qtype uint16) []dns.Re
 		}
 
 		// Check if query name is in this zone
-		if !strings.HasSuffix(name, zoneDot) {
-			slog.Debug("zone name mismatch", "query", name, "zone", zoneDot)
-			continue
+		if strings.HasSuffix(name, zoneDot) {
+			// Track the longest (most specific) match
+			if len(zoneDot) > longestMatch {
+				matchedZone = zone
+				matchedZoneName = zoneName
+				matchedZoneDot = zoneDot
+				longestMatch = len(zoneDot)
+			}
 		}
+	}
 
-		slog.Debug("zone matched", "query", name, "zone", zoneDot)
+	// No matching zone found
+	if matchedZone == nil {
+		slog.Debug("no matching zone", "name", name, "zones", len(s.zones))
+		return nil
+	}
 
-		// Check ACL
-		if zone.acl != nil && !zone.acl.AllowQuery(remoteIP) {
-			slog.Info("query denied by ACL", "name", name, "ip", remoteIP)
-			s.metrics.RecordError(zoneName, "acl_denied")
-			continue
-		}
+	slog.Debug("zone matched", "query", name, "zone", matchedZoneDot)
 
-		// Handle queries to zone apex (NS and SOA records)
-		if name == zoneDot || name == zoneName {
-			switch qtype {
-			case dns.QueryTypeNS:
-				if len(zone.ns) > 0 {
-					var answers []dns.ResourceRecord
-					for _, ns := range zone.ns {
-						if rrData, err := dns.EncodeNS(ns); err == nil {
-							answers = append(answers, dns.ResourceRecord{
-								Name:  zoneDot,
-								Type:  dns.QueryTypeNS,
-								Class: dns.ClassIN,
-								TTL:   s.defaultTTL,
-								Data:  rrData,
-							})
-						}
-					}
-					s.metrics.RecordResponse(zoneName, true)
-					return answers
-				}
-			case dns.QueryTypeSOA:
-				if zone.soa != nil {
-					if rrData, err := dns.EncodeSOA(
-						zone.soa.MName,
-						zone.soa.RName,
-						zone.soa.Serial,
-						zone.soa.Refresh,
-						zone.soa.Retry,
-						zone.soa.Expire,
-						zone.soa.Minimum,
-					); err == nil {
-						s.metrics.RecordResponse(zoneName, true)
-						return []dns.ResourceRecord{{
-							Name:  zoneDot,
-							Type:  dns.QueryTypeSOA,
+	// Check ACL
+	if matchedZone.acl != nil && !matchedZone.acl.AllowQuery(remoteIP) {
+		slog.Info("query denied by ACL", "name", name, "ip", remoteIP)
+		s.metrics.RecordError(matchedZoneName, "acl_denied")
+		return nil
+	}
+
+	// Check ACL
+	if matchedZone.acl != nil && !matchedZone.acl.AllowQuery(remoteIP) {
+		slog.Info("query denied by ACL", "name", name, "ip", remoteIP)
+		s.metrics.RecordError(matchedZoneName, "acl_denied")
+		return nil
+	}
+
+	// Handle queries to zone apex (NS and SOA records)
+	if name == matchedZoneDot || name == matchedZoneName {
+		switch qtype {
+		case dns.QueryTypeNS:
+			if len(matchedZone.ns) > 0 {
+				var answers []dns.ResourceRecord
+				for _, ns := range matchedZone.ns {
+					if rrData, err := dns.EncodeNS(ns); err == nil {
+						answers = append(answers, dns.ResourceRecord{
+							Name:  matchedZoneDot,
+							Type:  dns.QueryTypeNS,
 							Class: dns.ClassIN,
-							TTL:   zone.soa.Minimum,
+							TTL:   s.defaultTTL,
 							Data:  rrData,
-						}}
+						})
 					}
+				}
+				s.metrics.RecordResponse(matchedZoneName, true)
+				return answers
+			}
+		case dns.QueryTypeSOA:
+			if matchedZone.soa != nil {
+				if rrData, err := dns.EncodeSOA(
+					matchedZone.soa.MName,
+					matchedZone.soa.RName,
+					matchedZone.soa.Serial,
+					matchedZone.soa.Refresh,
+					matchedZone.soa.Retry,
+					matchedZone.soa.Expire,
+					matchedZone.soa.Minimum,
+				); err == nil {
+					s.metrics.RecordResponse(matchedZoneName, true)
+					return []dns.ResourceRecord{{
+						Name:  matchedZoneDot,
+						Type:  dns.QueryTypeSOA,
+						Class: dns.ClassIN,
+						TTL:   matchedZone.soa.Minimum,
+						Data:  rrData,
+					}}
 				}
 			}
 		}
+	}
 
-		// For generic datasets, we query the full name
-		// For IP-based datasets, they handle reverse IP lookup themselves
-		result, err := zone.dataset.Query(name, qtype)
-		if err != nil {
-			slog.Error("query error", "name", name, "zone", zoneName, "error", err)
-			s.metrics.RecordError(zoneName, "query_error")
-			continue
-		}
+	// Strip zone suffix from query name before passing to dataset
+	// This matches Spamhaus rbldnsd behavior where qi->qi_dnlen0/qi_dnlab
+	// represent "length/labels AFTER zone base is stripped"
+	queryName := name
+	if strings.HasSuffix(name, matchedZoneDot) {
+		// Remove the zone suffix, e.g. "gofundme.com.rwl.nullnetwork.cc" -> "gofundme.com"
+		queryName = strings.TrimSuffix(name, matchedZoneDot)
+		queryName = strings.TrimSuffix(queryName, ".") // Remove trailing dot if present
+	}
 
-		if result == nil {
-			slog.Debug("no match in zone", "name", name, "zone", zoneName)
-			s.metrics.RecordResponse(zoneName, false)
-			continue
-		}
+	// Query the matched zone's dataset
+	result, err := matchedZone.dataset.Query(queryName, qtype)
+	if err != nil {
+		slog.Error("query error", "name", name, "zone", matchedZoneName, "error", err)
+		s.metrics.RecordError(matchedZoneName, "query_error")
+		return nil
+	}
 
-		slog.Info("query result", "name", name, "zone", zoneName, "qtype", qtype, "values", len(result.Values))
-		s.metrics.RecordResponse(zoneName, true)
+	if result == nil {
+		slog.Debug("no match in zone", "name", name, "zone", matchedZoneName)
+		s.metrics.RecordResponse(matchedZoneName, false)
+		return nil
+	}
 
-		var answers []dns.ResourceRecord
-		for _, value := range result.Values {
-			var rrData []byte
+	slog.Info("query result", "name", name, "zone", matchedZoneName, "qtype", qtype, "a", result.ARecord, "txt", result.TXTTemplate)
+	s.metrics.RecordResponse(matchedZoneName, true)
 
-			switch qtype {
-			case dns.QueryTypeA:
-				ip := net.ParseIP(value)
-				if ip != nil {
-					rrData = dns.EncodeA(ip)
-				}
-			case dns.QueryTypeAAAA:
-				ip := net.ParseIP(value)
-				if ip != nil {
-					rrData = dns.EncodeAAAA(ip)
-				}
-			case dns.QueryTypeTXT:
-				rrData = dns.EncodeTXT(value)
-			case dns.QueryTypeMX:
-				// For MX, value should be "preference exchange"
-				parts := strings.Fields(value)
-				if len(parts) >= 2 {
-					var pref uint16
-					if _, err := fmt.Sscanf(parts[0], "%d", &pref); err == nil {
-						rrData, _ = dns.EncodeMX(pref, parts[1])
-					}
+	var answers []dns.ResourceRecord
+	var rrData []byte
+
+	switch qtype {
+	case dns.QueryTypeA:
+		// Return A record if available
+		if result.ARecord != "" {
+			ip := net.ParseIP(result.ARecord)
+			if ip != nil {
+				rrData = dns.EncodeA(ip)
+				if rrData != nil {
+					answers = append(answers, dns.ResourceRecord{
+						Name:  name,
+						Type:  dns.QueryTypeA,
+						Class: dns.ClassIN,
+						TTL:   result.TTL,
+						Data:  rrData,
+					})
 				}
 			}
-
+		}
+	case dns.QueryTypeTXT:
+		// Return TXT record if available (already substituted by dataset)
+		if result.TXTTemplate != "" {
+			rrData = dns.EncodeTXT(result.TXTTemplate)
 			if rrData != nil {
 				answers = append(answers, dns.ResourceRecord{
 					Name:  name,
-					Type:  qtype,
+					Type:  dns.QueryTypeTXT,
 					Class: dns.ClassIN,
 					TTL:   result.TTL,
 					Data:  rrData,
 				})
 			}
 		}
-
-		return answers
+	case dns.QueryTypeAAAA:
+		// For AAAA, try to parse ARecord as IPv6
+		if result.ARecord != "" {
+			ip := net.ParseIP(result.ARecord)
+			if ip != nil && ip.To16() != nil {
+				rrData = dns.EncodeAAAA(ip)
+				if rrData != nil {
+					answers = append(answers, dns.ResourceRecord{
+						Name:  name,
+						Type:  dns.QueryTypeAAAA,
+						Class: dns.ClassIN,
+						TTL:   result.TTL,
+						Data:  rrData,
+					})
+				}
+			}
+		}
+	case 255: // ANY query
+		// Return both A and TXT if available
+		if result.ARecord != "" {
+			ip := net.ParseIP(result.ARecord)
+			if ip != nil {
+				rrData = dns.EncodeA(ip)
+				if rrData != nil {
+					answers = append(answers, dns.ResourceRecord{
+						Name:  name,
+						Type:  dns.QueryTypeA,
+						Class: dns.ClassIN,
+						TTL:   result.TTL,
+						Data:  rrData,
+					})
+				}
+			}
+		}
+		if result.TXTTemplate != "" {
+			rrData = dns.EncodeTXT(result.TXTTemplate)
+			if rrData != nil {
+				answers = append(answers, dns.ResourceRecord{
+					Name:  name,
+					Type:  dns.QueryTypeTXT,
+					Class: dns.ClassIN,
+					TTL:   result.TTL,
+					Data:  rrData,
+				})
+			}
+		}
 	}
 
-	return nil
+	return answers
 }
 
 // Shutdown gracefully shuts down the server with a timeout.

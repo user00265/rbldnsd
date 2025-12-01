@@ -21,9 +21,11 @@ type IP6TrieNode struct {
 
 // IP6TrieDataset uses a trie for efficient IPv6 matching
 type IP6TrieDataset struct {
-	root   *IP6TrieNode
-	defVal string
-	defTTL uint32
+	root      *IP6TrieNode
+	defVal    string
+	defTTL    uint32
+	maxRange  int   // Maximum CIDR prefix length (for $MAXRANGE6)
+	timestamp int64 // Zone file modification time (for $TIMESTAMP)
 }
 
 func (ds *IP6TrieDataset) Count() int {
@@ -46,7 +48,7 @@ func (ds *IP6TrieDataset) countNodes(node *IP6TrieNode) int {
 
 // Query looks up an IPv6 address in the trie
 func (ds *IP6TrieDataset) Query(name string, qtype uint16) (*QueryResult, error) {
-	ip := parseReverseIP6(name)
+	ip := parseReverseIPv6(name)
 	if ip == nil {
 		return nil, nil
 	}
@@ -58,18 +60,25 @@ func (ds *IP6TrieDataset) Query(name string, qtype uint16) (*QueryResult, error)
 
 	value := node.Value
 	if value == "" {
-		value = ds.defVal
+		value = "127.0.0.2|"
 	}
-	if value == "" {
-		return nil, nil
+
+	// Split A|TXT format
+	parts := strings.SplitN(value, "|", 2)
+	aRecord := parts[0]
+	txtTemplate := ""
+	if len(parts) > 1 {
+		txtTemplate = parts[1]
 	}
+	// Substitute variables in TXT template
+	txtTemplate = substituteTXTWithMetadata(txtTemplate, ip.String(), ds.timestamp, ds.maxRange, true)
 
 	ttl := node.TTL
 	if ttl == 0 {
 		ttl = ds.defTTL
 	}
 
-	return &QueryResult{TTL: ttl, Values: []string{value}}, nil
+	return &QueryResult{TTL: ttl, ARecord: aRecord, TXTTemplate: txtTemplate}, nil
 }
 
 // findNode traverses the trie for an IPv6 address
@@ -169,6 +178,11 @@ func parseIP6TrieFile(filename string, ds *IP6TrieDataset) error {
 	}
 	defer file.Close()
 
+	// Get file modification time for $TIMESTAMP
+	if fileInfo, err := os.Stat(filename); err == nil {
+		ds.timestamp = fileInfo.ModTime().Unix()
+	}
+
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
 
@@ -225,6 +239,12 @@ func parseIP6TrieFile(filename string, ds *IP6TrieDataset) error {
 				continue
 			}
 			ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}
+		}
+
+		// Track maximum CIDR prefix length for $MAXRANGE6
+		ones, _ := ipnet.Mask.Size()
+		if ones < ds.maxRange || ds.maxRange == 0 {
+			ds.maxRange = ones
 		}
 
 		// Insert into trie

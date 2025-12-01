@@ -5,6 +5,7 @@ package dataset
 
 import (
 	"bufio"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -138,6 +139,11 @@ func parseIP4SetFile(filename string, ds *IP4SetDataset) error {
 	}
 	defer file.Close()
 
+	// Get file modification time for $TIMESTAMP
+	if fileInfo, err := os.Stat(filename); err == nil {
+		ds.timestamp = fileInfo.ModTime().Unix()
+	}
+
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
 
@@ -161,11 +167,11 @@ func parseIP4SetFile(filename string, ds *IP4SetDataset) error {
 			line = line[1:]
 		}
 
-		// Handle default value
+		// Handle default value line (:A:TXT format)
 		if strings.HasPrefix(line, ":") {
-			parts := strings.SplitN(line[1:], ":", 2)
-			if len(parts) > 0 {
-				ds.def = parts[0]
+			aRecord, txtTemplate, _ := parseATxt(line)
+			if aRecord != "" {
+				ds.def = aRecord + "|" + txtTemplate
 			}
 			continue
 		}
@@ -193,6 +199,12 @@ func parseIP4SetFile(filename string, ds *IP4SetDataset) error {
 			ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}
 		}
 
+		// Track maximum CIDR prefix length for $MAXRANGE4
+		ones, _ := ipnet.Mask.Size()
+		if ones < ds.maxRange || ds.maxRange == 0 {
+			ds.maxRange = ones
+		}
+
 		entry := &IP4SetEntry{
 			IP:       ipnet.IP,
 			Mask:     ipnet.Mask,
@@ -215,6 +227,11 @@ func parseIP4TrieFile(filename string, ds *IP4TrieDataset) error {
 		return err
 	}
 	defer file.Close()
+
+	// Get file modification time for $TIMESTAMP
+	if fileInfo, err := os.Stat(filename); err == nil {
+		ds.timestamp = fileInfo.ModTime().Unix()
+	}
 
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
@@ -239,11 +256,11 @@ func parseIP4TrieFile(filename string, ds *IP4TrieDataset) error {
 			line = line[1:]
 		}
 
-		// Handle default value
+		// Handle default value line (:A:TXT format)
 		if strings.HasPrefix(line, ":") {
-			parts := strings.SplitN(line[1:], ":", 2)
-			if len(parts) > 0 {
-				ds.defVal = parts[0]
+			aRecord, txtTemplate, _ := parseATxt(line)
+			if aRecord != "" {
+				ds.defVal = aRecord + "|" + txtTemplate
 			}
 			continue
 		}
@@ -254,9 +271,11 @@ func parseIP4TrieFile(filename string, ds *IP4TrieDataset) error {
 		}
 
 		ipStr := fields[0]
-		value := ""
+		value := ds.defVal
 		if len(fields) > 1 {
-			value = fields[1]
+			// Parse A:TXT format for this entry
+			aRecord, txtTemplate, _ := parseATxt(strings.Join(fields[1:], " "))
+			value = aRecord + "|" + txtTemplate
 		}
 
 		// Parse IP/CIDR
@@ -274,11 +293,16 @@ func parseIP4TrieFile(filename string, ds *IP4TrieDataset) error {
 			ipnet = &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}
 		}
 
+		// Track maximum CIDR prefix length for $MAXRANGE4
+		ones, _ := ipnet.Mask.Size()
+		if ones < ds.maxRange || ds.maxRange == 0 {
+			ds.maxRange = ones
+		}
+
 		// Insert into trie
 		ds.insertTrie(ipnet.IP, ipnet.Mask, value, excluded, ds.defTTL)
 		slog.Debug("ip4trie entry added", "ip", ipnet.String(), "value", value, "excluded", excluded)
 	}
-
 	return scanner.Err()
 }
 
@@ -342,6 +366,48 @@ func parseTTL(s string) (uint32, error) {
 	return uint32(val) * multiplier, nil
 }
 
+// parseATxt parses A and TXT records in Spamhaus format: ":A:TXT"
+// Returns: aRecord, txtTemplate, ttl
+// Examples:
+//
+//	":127.0.0.2:Listed"          -> "127.0.0.2", "Listed", 0
+//	":2:Spam source"             -> "127.0.0.2", "Spam source", 0
+//	":127.0.0.5:"                -> "127.0.0.5", "", 0
+//	"Listed: see http://x.com/$" -> "127.0.0.2", "Listed: see http://x.com/$", 0
+func parseATxt(s string) (string, string, uint32) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "127.0.0.2", "", 0
+	}
+
+	// Check if starts with colon (A record specified)
+	if strings.HasPrefix(s, ":") {
+		// Format: :A:TXT or :A:
+		parts := strings.SplitN(s[1:], ":", 2)
+		aRecord := strings.TrimSpace(parts[0])
+		txtTemplate := ""
+
+		if len(parts) > 1 {
+			txtTemplate = parts[1]
+		}
+
+		// Handle shorthand: :2: means 127.0.0.2
+		if aRecord != "" {
+			// Check if it's a single digit or two digits (127.0.0.x shorthand)
+			if len(aRecord) <= 3 && !strings.Contains(aRecord, ".") {
+				aRecord = "127.0.0." + aRecord
+			}
+		} else {
+			aRecord = "127.0.0.2"
+		}
+
+		return aRecord, txtTemplate, 0
+	}
+
+	// No colon prefix - this is just TXT template, use default A
+	return "127.0.0.2", s, 0
+}
+
 // parseValue parses a value string which may contain value and/or TTL
 // Format: "value" or "value:ttl" or ":ttl"
 func parseValue(s string) (string, uint32) {
@@ -367,4 +433,45 @@ func parseValue(s string) (string, uint32) {
 	}
 
 	return value, ttl
+}
+
+// substituteTXT performs $ substitution in TXT template
+// Replaces $ with the provided substitution string (IP or domain)
+// substituteTXT replaces variables in TXT templates
+// Supports: $, $TIMESTAMP, $MAXRANGE4, $MAXRANGE6
+func substituteTXT(template, subst string) string {
+	if template == "" {
+		return template
+	}
+	return strings.ReplaceAll(template, "$", subst)
+}
+
+// substituteTXTWithMetadata replaces all variables in TXT templates
+// including $TIMESTAMP, $MAXRANGE4, $MAXRANGE6
+func substituteTXTWithMetadata(template, subst string, timestamp int64, maxRange int, isIPv6 bool) string {
+	if template == "" {
+		return template
+	}
+
+	result := template
+
+	// Replace specific variables FIRST before generic $
+	// Replace $TIMESTAMP with Unix timestamp
+	if timestamp > 0 {
+		result = strings.ReplaceAll(result, "$TIMESTAMP", fmt.Sprintf("%d", timestamp))
+	}
+
+	// Replace $MAXRANGE4 or $MAXRANGE6 with maximum CIDR prefix
+	if maxRange > 0 {
+		if isIPv6 {
+			result = strings.ReplaceAll(result, "$MAXRANGE6", fmt.Sprintf("%d", maxRange))
+		} else {
+			result = strings.ReplaceAll(result, "$MAXRANGE4", fmt.Sprintf("%d", maxRange))
+		}
+	}
+
+	// Replace $ with the primary substitution (IP or domain) LAST
+	result = strings.ReplaceAll(result, "$", subst)
+
+	return result
 }
