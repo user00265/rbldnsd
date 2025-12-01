@@ -116,6 +116,11 @@ func parseDNSetFile(filename string, ds *DNSetDataset) error {
 			}
 		}
 
+		// If no value set (no default and no per-entry value), use 127.0.0.2
+		if value == "" {
+			value = "127.0.0.2|"
+		}
+
 		ds.entries = append(ds.entries, &DNSetEntry{
 			Name:     name,
 			Value:    value,

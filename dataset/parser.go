@@ -278,6 +278,11 @@ func parseIP4TrieFile(filename string, ds *IP4TrieDataset) error {
 			value = aRecord + "|" + txtTemplate
 		}
 
+		// If no value set (no default and no per-entry value), use 127.0.0.2
+		if value == "" {
+			value = "127.0.0.2|"
+		}
+
 		// Parse IP/CIDR
 		var ipnet *net.IPNet
 		var ip net.IP

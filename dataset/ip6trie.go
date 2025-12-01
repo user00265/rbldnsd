@@ -221,9 +221,16 @@ func parseIP6TrieFile(filename string, ds *IP6TrieDataset) error {
 		}
 
 		ipStr := fields[0]
-		value := ""
+		value := ds.defVal
 		if len(fields) > 1 {
-			value = fields[1]
+			// Parse A:TXT format for this entry
+			aRecord, txtTemplate, _ := parseATxt(strings.Join(fields[1:], " "))
+			value = aRecord + "|" + txtTemplate
+		}
+
+		// If no value set, use 127.0.0.2
+		if value == "" {
+			value = "127.0.0.2|"
 		}
 
 		// Parse IP/CIDR

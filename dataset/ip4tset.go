@@ -108,6 +108,11 @@ func parseIP4TSetFile(filename string, ds *IP4TSetDataset) error {
 			}
 		}
 
+		// If no value set, use 127.0.0.2
+		if value == "" {
+			value = "127.0.0.2|"
+		}
+
 		ds.entries = append(ds.entries, &IP4TSetEntry{
 			IP:    ip,
 			Value: value,
