@@ -6,6 +6,7 @@ package dataset
 import (
 	"bufio"
 	"log/slog"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -95,6 +96,19 @@ func parseDNSetFile(filename string, ds *DNSetDataset) error {
 		}
 
 		name := strings.ToLower(parts[0])
+
+		// Skip entries that look like IP addresses or CIDR blocks
+		// This allows dnset to be used in combined datasets alongside ip4trie/ip6trie
+		if net.ParseIP(name) != nil {
+			continue // It's a plain IP address
+		}
+		if _, _, err := net.ParseCIDR(name); err == nil {
+			continue // It's a CIDR block
+		}
+		if strings.Contains(name, "/") {
+			continue // Contains / but not valid CIDR - skip it anyway
+		}
+
 		wildcard := strings.HasPrefix(name, "*.")
 		if wildcard {
 			name = name[2:]
