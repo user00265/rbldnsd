@@ -118,6 +118,7 @@ func (s *Server) loadZones(cfg *config.Config) error {
 			failedZones = append(failedZones, zc.Name)
 			continue
 		}
+		slog.Info("zone loaded", "zone", zc.Name, "records", ds.Count())
 
 		// Load ACL - prefer inline rules, fall back to file
 		var zoneACL *acl.ACL
@@ -363,6 +364,11 @@ func (s *Server) handleRequest(conn *net.UDPConn, data []byte, remoteAddr *net.U
 		return
 	}
 
+	// Debug log for incoming queries
+	for _, q := range msg.Questions {
+		slog.Debug("incoming query", "name", q.Name, "qtype", q.Type, "from", remoteAddr.IP)
+	}
+
 	// Only handle queries
 	if msg.Header.QR {
 		return
@@ -471,6 +477,7 @@ func (s *Server) queryZones(remoteIP net.IP, name string, qtype uint16) []dns.Re
 		}
 
 		if result == nil {
+			slog.Debug("no match in zone", "name", name, "zone", zoneName)
 			s.metrics.RecordResponse(zoneName, false)
 			continue
 		}

@@ -17,14 +17,6 @@ import (
 	"github.com/user00265/rbldnsd/server"
 )
 
-// levelWriter routes log records to stdout or stderr based on level
-type levelWriter struct{}
-
-func (lw levelWriter) Write(p []byte) (n int, err error) {
-	// This is called by the handler, but we'll use a custom handler instead
-	return os.Stdout.Write(p)
-}
-
 // multiLevelHandler routes ERROR logs to stderr, everything else to stdout
 type multiLevelHandler struct {
 	infoHandler  slog.Handler

@@ -26,6 +26,10 @@ type DNSetDataset struct {
 	defTTL  uint32
 }
 
+func (ds *DNSetDataset) Count() int {
+	return len(ds.entries)
+}
+
 func loadDNSet(files []string) (Dataset, error) {
 	ds := &DNSetDataset{
 		entries: make([]*DNSetEntry, 0),

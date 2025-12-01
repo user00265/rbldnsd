@@ -26,6 +26,24 @@ type IP6TrieDataset struct {
 	defTTL uint32
 }
 
+func (ds *IP6TrieDataset) Count() int {
+	return ds.countNodes(ds.root)
+}
+
+func (ds *IP6TrieDataset) countNodes(node *IP6TrieNode) int {
+	if node == nil {
+		return 0
+	}
+	count := 0
+	if node.Value != "" || node.Excluded {
+		count = 1
+	}
+	for _, child := range node.Children {
+		count += ds.countNodes(child)
+	}
+	return count
+}
+
 // Query looks up an IPv6 address in the trie
 func (ds *IP6TrieDataset) Query(name string, qtype uint16) (*QueryResult, error) {
 	ip := parseReverseIP6(name)

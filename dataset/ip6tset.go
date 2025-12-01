@@ -25,6 +25,10 @@ type IP6TSetDataset struct {
 	defTTL  uint32
 }
 
+func (ds *IP6TSetDataset) Count() int {
+	return len(ds.entries)
+}
+
 func loadIP6TSet(files []string) (Dataset, error) {
 	ds := &IP6TSetDataset{
 		entries: make([]*IP6TSetEntry, 0),

@@ -25,6 +25,10 @@ type IP4TSetDataset struct {
 	defTTL  uint32
 }
 
+func (ds *IP4TSetDataset) Count() int {
+	return len(ds.entries)
+}
+
 func loadIP4TSet(files []string) (Dataset, error) {
 	ds := &IP4TSetDataset{
 		entries: make([]*IP4TSetEntry, 0),

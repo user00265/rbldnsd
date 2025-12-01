@@ -21,6 +21,7 @@ type QueryResult struct {
 // Dataset is the interface that all dataset types must implement.
 type Dataset interface {
 	Query(name string, qtype uint16) (*QueryResult, error)
+	Count() int
 }
 
 // GenericEntry represents an A, TXT, MX, or AAAA record.
@@ -34,6 +35,14 @@ type GenericEntry struct {
 // GenericDataset stores generic DNS records
 type GenericDataset struct {
 	entries map[string][]*GenericEntry
+}
+
+func (ds *GenericDataset) Count() int {
+	count := 0
+	for _, entries := range ds.entries {
+		count += len(entries)
+	}
+	return count
 }
 
 // IP4SetEntry represents an IPv4 address/range with optional return value
@@ -52,6 +61,10 @@ type IP4SetDataset struct {
 	defTTL  uint32
 }
 
+func (ds *IP4SetDataset) Count() int {
+	return len(ds.entries)
+}
+
 // IP4TrieNode is a node in the IP4 trie
 type IP4TrieNode struct {
 	Value    string
@@ -65,6 +78,21 @@ type IP4TrieDataset struct {
 	root   *IP4TrieNode
 	defVal string
 	defTTL uint32
+}
+
+func (ds *IP4TrieDataset) Count() int {
+	return ds.countNodes(ds.root)
+}
+
+func (ds *IP4TrieDataset) countNodes(node *IP4TrieNode) int {
+	if node == nil {
+		return 0
+	}
+	count := 0
+	if node.Value != "" || node.Excluded {
+		count = 1
+	}
+	return count + ds.countNodes(node.Children[0]) + ds.countNodes(node.Children[1])
 }
 
 func Load(dataType string, files []string) (Dataset, error) {
