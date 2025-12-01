@@ -457,7 +457,12 @@ func (s *Server) updateFileWatcher(cfg *config.Config) error {
 	shouldWatch := make(map[string]bool)
 	for _, zc := range cfg.Zones {
 		for _, file := range zc.Files {
-			shouldWatch[file] = true
+			// Strip dataset type prefix if present (e.g., "ip4trie:file.zone" -> "file.zone")
+			cleanFile := file
+			if idx := strings.Index(file, ":"); idx != -1 {
+				cleanFile = file[idx+1:]
+			}
+			shouldWatch[cleanFile] = true
 		}
 		// Also watch ACL files if specified
 		if zc.ACL != "" {
@@ -851,7 +856,12 @@ func (s *Server) initFileWatcher(cfg *config.Config) error {
 	filesToWatch := make(map[string]bool)
 	for _, zc := range cfg.Zones {
 		for _, file := range zc.Files {
-			filesToWatch[file] = true
+			// Strip dataset type prefix if present (e.g., "ip4trie:file.zone" -> "file.zone")
+			cleanFile := file
+			if idx := strings.Index(file, ":"); idx != -1 {
+				cleanFile = file[idx+1:]
+			}
+			filesToWatch[cleanFile] = true
 		}
 		// Also watch ACL files if specified
 		if zc.ACL != "" {
