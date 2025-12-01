@@ -381,6 +381,10 @@ func (s *Server) ListenAndServe() error {
 		conn.SetReadDeadline(time.Now().Add(s.readTimeout))
 		n, remoteAddr, err := conn.ReadFromUDP(buf)
 		if err != nil {
+			// Check if server is shutting down - don't log closed connection errors
+			if s.done.Load() {
+				break
+			}
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				continue
 			}
