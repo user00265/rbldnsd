@@ -59,10 +59,10 @@ func LoadACL(filename string) (*ACL, error) {
 		}
 
 		// Parse CIDR or IP
-		ip, ipnet, err := net.ParseCIDR(line)
+		_, ipnet, err := net.ParseCIDR(line)
 		if err != nil {
 			// Try single IP
-			ip = net.ParseIP(line)
+			ip := net.ParseIP(line)
 			if ip == nil {
 				slog.Warn("acl: invalid IP/CIDR", "line", lineNum, "value", line)
 				continue
@@ -103,10 +103,7 @@ func FromRules(allow, deny []string) (*ACL, error) {
 			// Try single IP
 			ip := net.ParseIP(rule)
 			if ip == nil {
-				if err != nil {
-					slog.Warn("allow rule: invalid IP/CIDR", "index", i, "value", rule)
-					continue
-				}
+				slog.Warn("allow rule: invalid IP/CIDR", "index", i, "value", rule)
 				continue
 			}
 			if ip4 := ip.To4(); ip4 != nil {
@@ -130,10 +127,7 @@ func FromRules(allow, deny []string) (*ACL, error) {
 			// Try single IP
 			ip := net.ParseIP(rule)
 			if ip == nil {
-				if err != nil {
-					slog.Warn("deny rule: invalid IP/CIDR", "index", i, "value", rule)
-					continue
-				}
+				slog.Warn("deny rule: invalid IP/CIDR", "index", i, "value", rule)
 				continue
 			}
 			if ip4 := ip.To4(); ip4 != nil {

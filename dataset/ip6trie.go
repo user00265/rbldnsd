@@ -82,8 +82,7 @@ func (ds *IP6TrieDataset) findNode(ip net.IP) *IP6TrieNode {
 				key[0] = key[0]<<1 | byte((nibble>>uint(i))&1)
 			}
 
-			keyStr := string(key)
-			if next, exists := node.Children[keyStr]; exists {
+			if next, exists := node.Children[string(key)]; exists {
 				node = next
 			} else {
 				node = nil
@@ -101,9 +100,7 @@ func (ds *IP6TrieDataset) findNode(ip net.IP) *IP6TrieNode {
 // parseReverseIP6 converts a reverse IPv6 DNS name to an IPv6 address
 func parseReverseIP6(name string) net.IP {
 	// Remove trailing dot
-	if strings.HasSuffix(name, ".") {
-		name = name[:len(name)-1]
-	}
+	name = strings.TrimSuffix(name, ".")
 
 	parts := strings.Split(name, ".")
 	// IPv6 reverse DNS format: individual hex digits separated by dots

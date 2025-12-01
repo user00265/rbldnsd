@@ -181,10 +181,10 @@ func parseIP4SetFile(filename string, ds *IP4SetDataset) error {
 		}
 
 		// Parse IP/CIDR
-		ip, ipnet, err := net.ParseCIDR(ipStr)
+		_, ipnet, err := net.ParseCIDR(ipStr)
 		if err != nil {
 			// Try single IP
-			ip = net.ParseIP(ipStr)
+			ip := net.ParseIP(ipStr)
 			if ip == nil {
 				slog.Warn("invalid IP", "line", lineNum, "value", ipStr)
 				continue

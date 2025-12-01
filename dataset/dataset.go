@@ -268,9 +268,7 @@ func (ds *IP4TrieDataset) findNode(ip net.IP) *IP4TrieNode {
 // parseReverseIP converts a reverse DNS name to an IP address
 func parseReverseIP(name string) net.IP {
 	// Remove trailing dot
-	if strings.HasSuffix(name, ".") {
-		name = name[:len(name)-1]
-	}
+	name = strings.TrimSuffix(name, ".")
 
 	parts := strings.Split(name, ".")
 	if len(parts) < 4 {
