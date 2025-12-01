@@ -102,6 +102,8 @@ func main() {
 		os.Exit(0)
 	}
 
+	slog.Info("rbldnsd starting", "version", Version)
+
 	var cfg *config.Config
 	var err error
 
@@ -178,8 +180,6 @@ func main() {
 			}
 		}
 	}()
-
-	slog.Info("rbldnsd starting", "version", Version, "bind", cfg.Server.Bind)
 	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("server error", "error", err)
 		os.Exit(1)
