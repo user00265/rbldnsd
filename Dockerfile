@@ -12,17 +12,11 @@ RUN go mod download
 # Build the binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o rbldnsd .
 
-# Make entrypoint script executable
-RUN chmod +x entrypoint.sh
-
 # Final stage - distroless
 FROM gcr.io/distroless/base-debian12:nonroot
 
 # Copy binary from builder
 COPY --from=builder /build/rbldnsd /usr/local/bin/rbldnsd
-
-# Copy entrypoint script (already executable from builder stage)
-COPY --from=builder /build/entrypoint.sh /entrypoint.sh
 
 # Create volumes
 VOLUME ["/data", "/config"]
@@ -33,8 +27,6 @@ EXPOSE 53/udp
 # Default config path
 ENV CONFIG_PATH=/config/rbldnsd.yaml
 
-# Use entrypoint script for flexible configuration
-ENTRYPOINT ["/entrypoint.sh"]
-
-# Default command (can be overridden)
-CMD ["-n"]
+# Use the binary directly with config file
+ENTRYPOINT ["/usr/local/bin/rbldnsd"]
+CMD ["-c", "/config/rbldnsd.yaml"]
