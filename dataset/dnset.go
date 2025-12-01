@@ -5,6 +5,7 @@ package dataset
 
 import (
 	"bufio"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -126,6 +127,7 @@ func parseDNSetFile(filename string, ds *DNSetDataset) error {
 			Wildcard: wildcard,
 			Negated:  negated,
 		})
+		slog.Debug("dnset entry added", "name", name, "value", value, "wildcard", wildcard, "negated", negated)
 	}
 
 	return scanner.Err()

@@ -71,6 +71,7 @@ type IP4TrieNode struct {
 	TTL      uint32
 	Children [2]*IP4TrieNode
 	Excluded bool
+	IsEntry  bool // true if this node represents an actual entry (not just intermediate)
 }
 
 // IP4TrieDataset uses a trie for efficient IP matching
@@ -89,7 +90,7 @@ func (ds *IP4TrieDataset) countNodes(node *IP4TrieNode) int {
 		return 0
 	}
 	count := 0
-	if node.Value != "" || node.Excluded {
+	if node.IsEntry {
 		count = 1
 	}
 	return count + ds.countNodes(node.Children[0]) + ds.countNodes(node.Children[1])
@@ -239,7 +240,7 @@ func (ds *IP4TrieDataset) Query(name string, qtype uint16) (*QueryResult, error)
 	}
 
 	node := ds.findNode(ip)
-	if node == nil || node.Excluded {
+	if node == nil || !node.IsEntry || node.Excluded {
 		return nil, nil
 	}
 

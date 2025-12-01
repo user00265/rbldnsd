@@ -124,6 +124,7 @@ func parseGenericFile(filename string, ds *GenericDataset) error {
 			TTL:   ttl,
 			Value: value,
 		})
+		slog.Debug("generic entry added", "name", name, "type", recordType, "value", value)
 	}
 
 	return scanner.Err()
@@ -201,6 +202,7 @@ func parseIP4SetFile(filename string, ds *IP4SetDataset) error {
 		}
 
 		ds.entries = append(ds.entries, entry)
+		slog.Debug("ip4set entry added", "ip", ipnet.String(), "value", value, "excluded", excluded)
 	}
 
 	return scanner.Err()
@@ -274,6 +276,7 @@ func parseIP4TrieFile(filename string, ds *IP4TrieDataset) error {
 
 		// Insert into trie
 		ds.insertTrie(ipnet.IP, ipnet.Mask, value, excluded, ds.defTTL)
+		slog.Debug("ip4trie entry added", "ip", ipnet.String(), "value", value, "excluded", excluded)
 	}
 
 	return scanner.Err()
@@ -303,6 +306,7 @@ func (ds *IP4TrieDataset) insertTrie(ip net.IP, mask net.IPMask, value string, e
 	node.Value = value
 	node.TTL = ttl
 	node.Excluded = excluded
+	node.IsEntry = true
 }
 
 // parseTTL parses a TTL value with optional suffixes

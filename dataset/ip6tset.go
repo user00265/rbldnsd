@@ -108,6 +108,7 @@ func parseIP6TSetFile(filename string, ds *IP6TSetDataset) error {
 			Value: value,
 			TTL:   ttl,
 		})
+		slog.Debug("ip6tset entry added", "ip", ip.String(), "value", value)
 	}
 
 	return scanner.Err()

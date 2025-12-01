@@ -56,7 +56,7 @@ var (
 )
 
 func main() {
-	// Configure structured logging with INFO/WARN to stdout, ERROR to stderr
+	// Configure initial logging with INFO level (will be reconfigured after config load)
 	handler := &multiLevelHandler{
 		infoHandler:  slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
 		errorHandler: slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}),
@@ -123,12 +123,12 @@ func main() {
 		}
 
 		if *zones == "" && len(cfg.Zones) == 0 {
-			fmt.Fprintf(os.Stderr, "usage: rbldnsd [options]\n")
-			fmt.Fprintf(os.Stderr, "  -b address:port  bind address and port (default: 0.0.0.0:53)\n")
-			fmt.Fprintf(os.Stderr, "  -z specs         zone specifications (zone:type:file,...)\n")
-			fmt.Fprintf(os.Stderr, "  -c config.yaml   config file (YAML)\n")
-			fmt.Fprintf(os.Stderr, "  -n               run in foreground\n")
-			fmt.Fprintf(os.Stderr, "  -v               show version\n")
+			fmt.Fprintf(os.Stderr, "usage: rbldnsd [options]\\n")
+			fmt.Fprintf(os.Stderr, "  -b address:port  bind address and port (default: 0.0.0.0:53)\\n")
+			fmt.Fprintf(os.Stderr, "  -z specs         zone specifications (zone:type:file,...)\\n")
+			fmt.Fprintf(os.Stderr, "  -c config.yaml   config file (YAML)\\n")
+			fmt.Fprintf(os.Stderr, "  -n               run in foreground\\n")
+			fmt.Fprintf(os.Stderr, "  -v               show version\\n")
 			os.Exit(1)
 		}
 
@@ -147,6 +147,25 @@ func main() {
 			}
 		}
 	}
+
+	// Reconfigure logging based on config
+	logLevel := slog.LevelInfo
+	switch strings.ToLower(cfg.Logging.Level) {
+	case "debug":
+		logLevel = slog.LevelDebug
+	case "info":
+		logLevel = slog.LevelInfo
+	case "warn", "warning":
+		logLevel = slog.LevelWarn
+	case "error":
+		logLevel = slog.LevelError
+	}
+
+	handler = &multiLevelHandler{
+		infoHandler:  slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}),
+		errorHandler: slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}),
+	}
+	slog.SetDefault(slog.New(handler))
 
 	srv, err := server.New(cfg, *configFile)
 	if err != nil {

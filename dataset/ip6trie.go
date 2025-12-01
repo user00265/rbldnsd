@@ -229,6 +229,7 @@ func parseIP6TrieFile(filename string, ds *IP6TrieDataset) error {
 
 		// Insert into trie
 		ds.insertTrie(ipnet.IP, ipnet.Mask, value, excluded, ds.defTTL)
+		slog.Debug("ip6trie entry added", "ip", ipnet.String(), "value", value, "excluded", excluded)
 	}
 
 	return scanner.Err()

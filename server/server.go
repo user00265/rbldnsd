@@ -405,6 +405,8 @@ func (s *Server) queryZones(remoteIP net.IP, name string, qtype uint16) []dns.Re
 	s.zonesMu.RLock()
 	defer s.zonesMu.RUnlock()
 
+	slog.Debug("queryZones", "name", name, "qtype", qtype, "zones", len(s.zones))
+
 	for zoneName, zone := range s.zones {
 		zoneDot := zoneName
 		if !strings.HasSuffix(zoneDot, ".") {
@@ -413,8 +415,11 @@ func (s *Server) queryZones(remoteIP net.IP, name string, qtype uint16) []dns.Re
 
 		// Check if query name is in this zone
 		if !strings.HasSuffix(name, zoneDot) {
+			slog.Debug("zone name mismatch", "query", name, "zone", zoneDot)
 			continue
 		}
+
+		slog.Debug("zone matched", "query", name, "zone", zoneDot)
 
 		// Check ACL
 		if zone.acl != nil && !zone.acl.AllowQuery(remoteIP) {
