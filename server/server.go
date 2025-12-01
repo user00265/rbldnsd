@@ -238,6 +238,99 @@ func (s *Server) Reload() error {
 	return s.loadZones(cfg)
 }
 
+// ReloadFile reloads only the zones that use the specified file
+func (s *Server) ReloadFile(changedFile string) error {
+	cfg := s.configMgr.Get()
+
+	// Find which zones use this file
+	var affectedZones []*config.ZoneConfig
+	for i := range cfg.Zones {
+		zc := &cfg.Zones[i]
+		for _, file := range zc.Files {
+			if file == changedFile {
+				affectedZones = append(affectedZones, zc)
+				break
+			}
+		}
+		// Also check ACL file
+		if zc.ACL == changedFile {
+			affectedZones = append(affectedZones, zc)
+		}
+	}
+
+	if len(affectedZones) == 0 {
+		slog.Debug("no zones affected by file change", "file", changedFile)
+		return nil
+	}
+
+	// Reload each affected zone
+	for _, zc := range affectedZones {
+		slog.Info("reloading zone", "zone", zc.Name, "type", zc.Type, "files", zc.Files)
+
+		ds, err := dataset.Load(zc.Type, zc.Files, s.defaultTTL)
+		if err != nil {
+			slog.Error("failed to reload zone", "zone", zc.Name, "error", err)
+			continue
+		}
+		slog.Info("zone reloaded", "zone", zc.Name, "records", ds.Count())
+
+		// Load ACL - prefer inline rules, fall back to file
+		var zoneACL *acl.ACL
+		if len(zc.ACLRule.Allow) > 0 || len(zc.ACLRule.Deny) > 0 {
+			zoneACL, err = acl.FromRules(zc.ACLRule.Allow, zc.ACLRule.Deny)
+			if err != nil {
+				slog.Error("failed to parse inline ACL for zone", "zone", zc.Name, "error", err)
+				continue
+			}
+		} else if zc.ACL != "" {
+			zoneACL, err = acl.LoadACL(zc.ACL)
+			if err != nil {
+				slog.Error("failed to load ACL file for zone", "zone", zc.Name, "error", err)
+				continue
+			}
+		}
+
+		// Set default SOA values if not provided
+		soaConfig := zc.SOA
+		if len(zc.NS) > 0 && soaConfig.MName == "" {
+			soaConfig.MName = zc.NS[0]
+		}
+		if soaConfig.Refresh == 0 {
+			soaConfig.Refresh = s.soaRefresh
+		}
+		if soaConfig.Retry == 0 {
+			soaConfig.Retry = s.soaRetry
+		}
+		if soaConfig.Expire == 0 {
+			soaConfig.Expire = s.soaExpire
+		}
+		if soaConfig.Minimum == 0 {
+			soaConfig.Minimum = s.soaMinimum
+		}
+
+		var soaPtr *config.SOAConfig
+		if soaConfig.MName != "" && soaConfig.RName != "" {
+			soaPtr = &soaConfig
+		}
+
+		newZone := &Zone{
+			name:     zc.Name,
+			dataType: zc.Type,
+			files:    zc.Files,
+			dataset:  ds,
+			acl:      zoneACL,
+			ns:       zc.NS,
+			soa:      soaPtr,
+		}
+
+		s.zonesMu.Lock()
+		s.zones[zc.Name] = newZone
+		s.zonesMu.Unlock()
+	}
+
+	return nil
+}
+
 // handleConfigReload is called by ConfigManager when config file changes
 func (s *Server) handleConfigReload(newCfg *config.Config, changes config.ZoneChanges) error {
 	// Handle server config changes (bind address, timeout)
@@ -741,7 +834,7 @@ func (s *Server) watchFiles() {
 			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) ||
 				event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
 				slog.Info("detected file change", "file", event.Name, "op", event.Op)
-				s.scheduleReload()
+				s.scheduleReload(event.Name)
 			}
 
 		case err, ok := <-s.watcher.Errors:
@@ -754,7 +847,7 @@ func (s *Server) watchFiles() {
 }
 
 // scheduleReload schedules a zone reload with debouncing
-func (s *Server) scheduleReload() {
+func (s *Server) scheduleReload(changedFile string) {
 	s.reloadMu.Lock()
 	defer s.reloadMu.Unlock()
 
@@ -765,10 +858,10 @@ func (s *Server) scheduleReload() {
 
 	// Schedule new reload after debounce period
 	s.reloadTimer = time.AfterFunc(s.reloadDebounce, func() {
-		slog.Info("reloading zones due to file changes")
+		slog.Info("reloading zones due to file changes", "file", changedFile)
 		startTime := time.Now()
 
-		if err := s.Reload(); err != nil {
+		if err := s.ReloadFile(changedFile); err != nil {
 			slog.Error("failed to reload zones", "error", err)
 		} else {
 			duration := time.Since(startTime)
