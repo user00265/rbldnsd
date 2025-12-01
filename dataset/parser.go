@@ -191,6 +191,11 @@ func parseIP4SetFileWithSilent(filename string, ds *IP4SetDataset, silent bool) 
 			value = fields[1]
 		}
 
+		// If no value set, use 127.0.0.2
+		if value == "" {
+			value = "127.0.0.2|"
+		}
+
 		// Parse IP/CIDR
 		_, ipnet, err := net.ParseCIDR(ipStr)
 		if err != nil {
