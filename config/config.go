@@ -55,7 +55,6 @@ type ACLRuleSet struct {
 }
 
 type MetricsConfig struct {
-	Port               int    `yaml:"port"` // Deprecated: use prometheus_endpoint
 	PrometheusEndpoint string `yaml:"prometheus_endpoint"`
 	OTELEndpoint       string `yaml:"otel_endpoint"`
 }
@@ -77,9 +76,6 @@ func LoadConfig(path string) (*Config, error) {
 			Timeout:        5,
 			AutoReload:     true, // Enable by default
 			ReloadDebounce: 2,    // 2 second debounce
-		},
-		Metrics: MetricsConfig{
-			Port: 9090,
 		},
 		Logging: LoggingConfig{
 			Level: "info",

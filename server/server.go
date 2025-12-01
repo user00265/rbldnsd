@@ -68,16 +68,7 @@ func New(cfg *config.Config, configPath string) (*Server, error) {
 
 	// Initialize metrics
 	var err error
-
-	// Handle both old 'port' and new 'prometheus_endpoint' config
-	prometheusEndpoint := cfg.Metrics.PrometheusEndpoint
-	if prometheusEndpoint == "" && cfg.Metrics.Port > 0 {
-		// Backward compatibility: convert port to endpoint
-		prometheusEndpoint = fmt.Sprintf("0.0.0.0:%d", cfg.Metrics.Port)
-		slog.Warn("Using deprecated 'port' config. Please use 'prometheus_endpoint' instead.")
-	}
-
-	srv.metrics, err = metrics.New(cfg.Metrics.OTELEndpoint, prometheusEndpoint)
+	srv.metrics, err = metrics.New(cfg.Metrics.OTELEndpoint, cfg.Metrics.PrometheusEndpoint)
 	if err != nil {
 		slog.Warn("failed to initialize metrics", "error", err)
 	}
