@@ -80,20 +80,28 @@ metrics:
 
 ## Zone Files
 
-### IP4 Blocklist Format (ip4trie)
-```
-# CIDR blocks with optional return values
-192.0.2.0/24 127.0.0.2
-203.0.113.0/24 127.0.0.3:Listed
+rbldnsd supports 7 different dataset types optimized for different use cases:
 
-# Exclusions
+| Type | Use |
+|------|-----|
+| ip4trie | IPv4 blocklists (efficient trie-based) |
+| ip4set | IPv4 simple ranges |
+| ip4tset | IPv4 with per-entry values |
+| ip6trie | IPv6 blocklists |
+| ip6tset | IPv6 with per-entry values |
+| dnset | Domain blocklists with wildcards |
+| generic | Standard DNS records (A, MX, TXT, AAAA) |
+
+### Quick Examples
+
+**IP4 Blocklist (ip4trie) - Just the IP/CIDR, responds with 127.0.0.2 by default:**
+```
+192.0.2.0/24
+203.0.113.0/24
 !192.0.2.50
-
-# Default
-0.0.0.0/0 127.0.0.2
 ```
 
-### Generic DNS Records (generic)
+**Generic DNS Records (generic):**
 ```
 example.com 3600 IN A 192.0.2.1
 example.com 3600 IN TXT "v=spf1 mx -all"
@@ -101,12 +109,15 @@ mail.example.com 3600 IN A 192.0.2.2
 example.com 3600 IN MX 10 mail.example.com
 ```
 
-### Domain Blocklist (dnset)
+**Domain Blocklist (dnset) - Just the domain, responds with 127.0.0.2 by default:**
 ```
-spam.example.com 127.0.0.2
-*.badactor.org 127.0.0.3
-!trusted.badactor.org
+spam.example.com
+badactor.org
+*.evil.net
+!trusted.evil.net
 ```
+
+For detailed format documentation for all dataset types, see [ZONE_FORMAT.md](ZONE_FORMAT.md).
 
 ## Query Examples
 
@@ -220,7 +231,22 @@ server:
   bind: "0.0.0.0:53"         # Listen address
   timeout: 5                  # Query timeout in seconds
   auto_reload: true           # Watch config for changes
-  reload_debounce: 2          # Debounce delay in seconds
+  reload_debounce: 2          # Debounce delay in seconds (batches file changes)
+  read_timeout: 1             # UDP read timeout in seconds
+  shutdown_timeout: 5         # Graceful shutdown timeout in seconds
+  udp_buffer_size: 512        # UDP receive buffer size in bytes
+  default_ttl: 3600           # Default TTL for DNS records in seconds
+  soa_refresh: 3600           # Default SOA refresh interval in seconds
+  soa_retry: 600              # Default SOA retry interval in seconds
+  soa_expire: 86400           # Default SOA expire time in seconds
+  soa_minimum: 3600           # Default SOA minimum TTL in seconds
+```
+
+### Logging
+
+```yaml
+logging:
+  level: "info"               # Log level (debug, info, warn, error)
 ```
 
 ### Zone Configuration

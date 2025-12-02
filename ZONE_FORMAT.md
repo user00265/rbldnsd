@@ -94,42 +94,50 @@ example.com 3600 IN MX 10 mail.example.com
 - Forward lookups use standard domain names
 
 ### IP4Set Dataset Format
-IP4SET is the most common format for DNSBL/RBL usage:
+IP4SET is the most common format for DNSBL/RBL usage. Returns 127.0.0.2 by default if no value is specified.
 
 ```
-IP_ADDRESS[:port] [RETURN_VALUE]
+IP_ADDRESS [RETURN_VALUE]
 IP_RANGE [RETURN_VALUE]
 ```
 
 #### Entry Formats:
 
-**Single IP address:**
+**Single IP address (responds with 127.0.0.2 by default):**
 ```
 192.0.2.1
-192.0.2.1 127.0.0.2
 ```
 
-**IP range (CIDR notation):**
+**With custom return value:**
+```
+192.0.2.2 127.0.0.3
+```
+
+**IP range (CIDR notation, responds with 127.0.0.2 by default):**
 ```
 192.0.2.0/24
-192.0.2.0/24 127.0.0.2
+```
+
+**With custom return value:**
+```
+192.0.2.0/24 127.0.0.3
 ```
 
 **IP range (dot notation, /32, /24, /16, /8 only):**
 ```
-192.0.2.* 127.0.0.2
+192.0.2.*
 192.0.*.* 127.0.0.3
 ```
 
 **Exclusions (prefix with `!`):**
 ```
-192.0.2.0/24 127.0.0.2
+192.0.2.0/24
 !192.0.2.1
 ```
 
-**Default return value (starts with `:`)**:
+**Set default return value for all entries (optional, starts with `:`)**:
 ```
-:127.0.0.2
+:127.0.0.5
 ```
 
 #### Return Values:
@@ -160,28 +168,37 @@ IP_PATTERN [TEXT_VALUE]
 
 #### Entry Formats:
 
-**CIDR notation:**
+**Single address or CIDR (responds with 127.0.0.2 by default):**
 ```
-1.2.3.0/24 listed
-1.2.3.0/24 127.0.0.2
+192.0.2.1
+192.0.2.0/24
 ```
 
-**Wildcard pattern:**
+**With custom return value:**
 ```
-0/0 default_value
-127.0.0.1 localhost
+1.2.3.0/24 listed
+1.2.3.0/24 127.0.0.3
+```
+
+**Wildcard pattern (responds with 127.0.0.2 by default):**
+```
+1.2.3.*
+```
+
+**With custom value:**
+```
 1.2.3.* value
 ```
 
 **Exclusions:**
 ```
-1.2.3.0/24 listed
+1.2.3.0/24
 !1.2.3.4
 ```
 
-**Default value:**
+**Set default catch-all for all entries (optional):**
 ```
-0/0 wild
+0/0 default_value
 ```
 
 ### Parsing Rules
@@ -317,6 +334,51 @@ IP4 addresses with per-entry values (trivial set).
 - Per-entry value override
 - Per-entry TTL support
 
+## IP6Trie Dataset Type
+
+IPv6 hierarchical trie structure for efficient blocklist lookups. Similar to IP4Trie but for IPv6 addresses.
+
+**Format:**
+```
+IP_ADDRESS [TEXT_VALUE]
+IP_RANGE [TEXT_VALUE]
+!EXCLUSION
+```
+
+**Entry Formats:**
+
+**Single address or CIDR (responds with 127.0.0.2 by default):**
+```
+2001:db8::dead:beef
+2001:db8::/32
+2001:db8:1::/48
+```
+
+**With custom return value:**
+```
+2001:db8::/32 listed
+2001:db8:1::/48 127.0.0.3
+```
+
+**Exclusions:**
+```
+2001:db8::/32
+!2001:db8::1
+```
+
+**Set default catch-all for all entries (optional):**
+```
+::/0 default_value
+```
+
+**Features:**
+- CIDR range matching
+- Efficient trie-based lookup for hierarchical IPv6 addresses
+- Per-entry values (text or IP addresses)
+- Exclusions with `!` prefix
+- Default catch-all with `::/0`
+- Responds with 127.0.0.2 by default if no value specified
+
 ## IP6TSet Dataset Type
 
 IPv6 addresses with per-entry values.
@@ -338,30 +400,38 @@ IPv6 addresses with per-entry values.
 
 ## DNSet Dataset Type
 
-Domain name sets with wildcard support.
+Domain name sets with wildcard support. Returns 127.0.0.2 by default if no value is specified.
 
 **Format:**
 ```
-# Default value
-:127.0.0.2
+# Exact domain matches (responds with 127.0.0.2 by default)
+example.com
+badactor.org
 
-# Exact domain matches
-example.com 127.0.0.3
-badactor.org 127.0.0.4
+# With custom return value
+spam.example.com 127.0.0.3
+phishing.net 127.0.0.4
 
-# Wildcard matches
-*.spam.example 127.0.0.5
+# Wildcard matches (responds with 127.0.0.2 by default)
+*.spam.example
+
+# Wildcard with custom value
+*.badactor.org 127.0.0.5
 
 # Negation (exclude from matching)
 !good.spam.example
+
+# Set default return value for all entries (optional)
+:127.0.0.2
 ```
 
 **Features:**
-- Exact domain name matching
-- Wildcard subdomain matching (`*.domain`)
+- Exact domain name matching (responds with 127.0.0.2 by default if no value specified)
+- Wildcard subdomain matching (`*.domain`, responds with 127.0.0.2 by default)
 - Negation support (`!domain`)
 - Case-insensitive matching
 - Per-entry values and TTL
+- Default return value with `:` prefix
 
 **Matching Priority:**
 1. Negated exact matches
